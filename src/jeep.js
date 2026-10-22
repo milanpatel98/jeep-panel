@@ -111,6 +111,13 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   anchors.seatFL = new THREE.Vector3(0.38 * sx, 1.05, front * 0.2); anchors.seatFR = new THREE.Vector3(-0.38 * sx, 1.05, front * 0.2)
   anchors.seatBL = new THREE.Vector3(0.48 * sx, 1.05, front * -0.62); anchors.seatBM = new THREE.Vector3(0, 1.05, front * -0.62); anchors.seatBR = new THREE.Vector3(-0.48 * sx, 1.05, front * -0.62)
   anchors.wheel = new THREE.Vector3(0.4 * sx, 1.15, front * 0.74)
+  // labels on parts that swing ride along with them
+  const hinged = { FL: doors.FL.hinge, FR: doors.FR.hinge, BL: doors.BL.hinge, BR: doors.BR.hinge, hood: hood.hinge, gate: gate.hinge }
+  const onHinge = {}
+  for (const [k, h] of Object.entries(hinged)) { h.updateMatrixWorld(true); onHinge[k] = h.worldToLocal(root.localToWorld(anchors[k].clone())) }
+  // how far the open gate reaches behind the car (for fitting the top view)
+  const gateReach = Math.abs(hingeZ) + Math.abs((front > 0 ? gMax.x : gMin.x) - rightX) * Math.sin(THREE.MathUtils.degToRad(80))
+  let gateTarget = false
   // the steering (front) wheels: the model's wheel nodes are named for the other end, so pick by position
   const wheelNodes = ['FL', 'FR', 'BL', 'BR'].map(byName).filter(Boolean).sort((a, b) => (local(b).c.z - local(a).c.z) * front)
   const wheels = { FL: wheelNodes[0], FR: wheelNodes[1] }
@@ -149,7 +156,7 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   function tween(get, set, to, ms = 650, tag) { if (window.__jeepInstant) ms = 1; if (tag) for (let i = tweens.length - 1; i >= 0; i--) if (tweens[i].tag === tag) tweens.splice(i, 1); const from = get(); const t0 = performance.now(); tweens.push({ from, to, t0, ms, set, tag }); kick() }
   function setDoor(k, open) { const d = doors[k]; tween(() => d.open, (v) => { d.open = v; d.hinge.rotation.y = d.sign * v * THREE.MathUtils.degToRad(64) }, open ? 1 : 0, 800) }
   function setHood(open) { tween(() => hood.open, (v) => { hood.open = v; hood.hinge.rotation.x = -front * v * THREE.MathUtils.degToRad(48) }, open ? 1 : 0, 900) }
-  function setGate(open) { tween(() => gate.open, (v) => { gate.open = v; gate.hinge.rotation.y = -front * Math.sign(rightX) * v * THREE.MathUtils.degToRad(80) }, open ? 1 : 0, 900) }
+  function setGate(open) { gateTarget = !!open; if (view === 'top') setView('top', 900); tween(() => gate.open, (v) => { gate.open = v; gate.hinge.rotation.y = -front * Math.sign(rightX) * v * THREE.MathUtils.degToRad(80) }, open ? 1 : 0, 900) }
   function setLights(on) { tween(() => state.lights, (v) => { state.lights = v; head.emissiveIntensity = v * 3.2; for (const b of beams) b.intensity = v * (state.night ? 60 : 18); for (const p of pools) p.material.opacity = v * (state.night ? 0.24 : 0); tail.emissiveIntensity = Math.max(v * 0.8, state.brake * 2.4) }, on ? 1 : 0, 350) }
   function setBrake(on) { tween(() => state.brake, (v) => { state.brake = v; tail.emissiveIntensity = Math.max(state.lights * 0.8, v * 2.4) }, on ? 1 : 0, 150) }
   let roofMode = 'on', peek = false
@@ -189,12 +196,16 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
     if (name === 'top') {
       const a = canvas.clientWidth / Math.max(1, canvas.clientHeight), t = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))
       // fit the whole Jeep (with a margin) in both directions; the top of the car is closer to the camera than the ground
-      const hl = size.z * s / 2, hw = size.x * s / 2, near = size.y * s, m = 1.12
+      // an open tailgate sticks out behind: make room for it and slide the centre back
+      const half = size.z * s / 2, rear = gateTarget ? Math.max(half, gateReach) : half
+      const hl = (half + rear) / 2, hw = size.x * s / 2, near = size.y * s, m = 1.12
       const dUp = near + Math.max(hl, hw / a) * m / t        // front pointing up
       const dSide = near + Math.max(hw, hl / a) * m / t      // front pointing right
       v = dUp <= dSide ? { ...v, az: 180, d: dUp } : { ...v, az: -90, d: dSide }
+      v.shift = front * (half - rear) / 2
     }
-    const fromP = cam.position.clone(), toP = sph(v); const fromT = controls.target.clone(), toT = new THREE.Vector3(0, v.y, 0)
+    const off = new THREE.Vector3(0, 0, v.shift || 0)
+    const fromP = cam.position.clone(), toP = sph(v).add(off); const fromT = controls.target.clone(), toT = new THREE.Vector3(0, v.y, 0).add(off)
     tween(() => 0, (k) => { cam.position.lerpVectors(fromP, toP, k); controls.target.lerpVectors(fromT, toT, k) }, 1, ms, 'cam')
   }
   cam.position.copy(sph(VIEWS.hero))
@@ -202,7 +213,8 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   const _p = new THREE.Vector3()
   function anchor(name) {
     const a = anchors[name]; if (!a) return null
-    _p.copy(a).project(cam)
+    if (onHinge[name]) { _p.copy(onHinge[name]).applyMatrix4(hinged[name].matrixWorld) } else _p.copy(a)
+    _p.project(cam)
     return { x: (_p.x + 1) / 2 * canvas.clientWidth, y: (1 - _p.y) / 2 * canvas.clientHeight, visible: _p.z < 1 }
   }
 
