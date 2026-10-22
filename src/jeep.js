@@ -92,7 +92,13 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   const gMin = root.worldToLocal(gateBox.min.clone()), gMax = root.worldToLocal(gateBox.max.clone())
   // a Wrangler's swing gate hinges on the passenger side (car's right)
   const rightX = front > 0 ? gMin.x : gMax.x
-  const gate = { hinge: hingeAt(gateParts, new THREE.Vector3(rightX, 0, front > 0 ? gMin.z : gMax.z)), open: 0 }
+  // the hinge sits on the outer face of the gate's painted panel (like the real external hinges),
+  // so the gate swings clear of the body instead of leaving a gap at the corner
+  const panelBox = new THREE.Box3(); for (const o of gateParts) o.traverse((m) => { if (m.isMesh && [].concat(m.material).some((x) => x.name === 'JMI_1355060001_004')) panelBox.union(new THREE.Box3().setFromObject(m)) })
+  const pMin = root.worldToLocal(panelBox.min.clone()), pMax = root.worldToLocal(panelBox.max.clone())
+  const hingeZ = panelBox.isEmpty() ? (front > 0 ? gMax.z : gMin.z) : (front > 0 ? pMin.z : pMax.z)
+  const gate = { hinge: hingeAt(gateParts, new THREE.Vector3(rightX, 0, hingeZ)), open: 0 }
+  window.__gate = { parts: gateParts.map((o) => o.name), min: gMin.toArray(), max: gMax.toArray(), rightX, front }
 
   const panels = byName('group1'), hardtop = byName('roof')
   // fixed points on the body (closed position) so the UI can pin labels and tap targets to parts
@@ -177,12 +183,16 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   let view = 'hero'
   function setView(name, ms = 900) {
     view = name
+    controls.enableRotate = name !== 'top'   // the top view stays put, like Tesla's
     let v = VIEWS[name]
     // top view: the Jeep's long axis follows the screen's long axis (front up on portrait, front right on landscape)
     if (name === 'top') {
-      const a = canvas.clientWidth / Math.max(1, canvas.clientHeight), t = Math.tan(THREE.MathUtils.degToRad(12))
-      // the roof sits ~1.7 m closer to the camera than the ground, so frame it, not the ground
-      v = a < 1.25 ? { ...v, az: 180, d: Math.max(13.5, 2.7 / (2 * t * a) + 1.7) } : { ...v, az: -90, d: Math.max(5.8 / (2 * t * a) + 1.7, 7) }
+      const a = canvas.clientWidth / Math.max(1, canvas.clientHeight), t = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))
+      // fit the whole Jeep (with a margin) in both directions; the top of the car is closer to the camera than the ground
+      const hl = size.z * s / 2, hw = size.x * s / 2, near = size.y * s, m = 1.12
+      const dUp = near + Math.max(hl, hw / a) * m / t        // front pointing up
+      const dSide = near + Math.max(hw, hl / a) * m / t      // front pointing right
+      v = dUp <= dSide ? { ...v, az: 180, d: dUp } : { ...v, az: -90, d: dSide }
     }
     const fromP = cam.position.clone(), toP = sph(v); const fromT = controls.target.clone(), toT = new THREE.Vector3(0, v.y, 0)
     tween(() => 0, (k) => { cam.position.lerpVectors(fromP, toP, k); controls.target.lerpVectors(fromT, toT, k) }, 1, ms, 'cam')
