@@ -270,8 +270,10 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   function kick() { if (!raf) raf = requestAnimationFrame(frame) }
   controls.addEventListener('change', kick)
   controls.addEventListener('start', kick)
-  // top view: drag it around freely; on release it glides back to the fitted view, so it never stays cropped
-  controls.addEventListener('end', () => { if (view === 'top') setView('top', 700) })
+  // top view: spin it freely; after 2.5 s of no touching it glides back to the fitted view, so it never stays cropped
+  let idle = 0
+  controls.addEventListener('start', () => clearTimeout(idle))
+  controls.addEventListener('end', () => { clearTimeout(idle); if (view === 'top') idle = setTimeout(() => { if (view === 'top') setView('top', 1100) }, 2500) })
 
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight
