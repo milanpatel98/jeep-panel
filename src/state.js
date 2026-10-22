@@ -20,7 +20,7 @@ export const state = {
   gate: false,
   roof: 'on',          // 'on' | 'panels' | 'off'
   windows: false,      // true = down
-  location: { label: 'Home', detail: 'Golden, CO', since: '2h' },
+  location: { label: 'Home', detail: 'Golden, CO', since: '2h', lat: 39.7555, lng: -105.2211, heading: 35 },
   trail: { name: 'Guanella Pass', miles: 42 },
   odometer: 14_212,
   night: null,         // null = follow the clock

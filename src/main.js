@@ -19,7 +19,6 @@ $$('.back').forEach((b) => (b.innerHTML = I.caretLeft))
 $('#fab').innerHTML = I.caretLeft
 const TILE_ICON = { doors: I.door, hood: I.carProfile, gate: I.jeep, windows: I.wind, lights: I.headlights, hazards: I.warning, horn: I.megaphone, doorsOff: I.doorOpen, lock: I.lock, power: I.power, vent: I.wind }
 $$('.tile, .strip-btn').forEach((t) => (t.querySelector('i').innerHTML = TILE_ICON[t.dataset.t || t.dataset.c] || ''))
-$('#map').insertAdjacentHTML('afterbegin', mapSvg())
 
 // ---------- the car (loads in the background; the UI is live immediately) ----------
 let jeep = null
@@ -67,8 +66,30 @@ function route() {
 }
 // the small Jeep on the map: lives only while the Location screen is open
 let miniView = null
+let leaflet = null
+async function ensureMap() {
+  if (leaflet) { leaflet.invalidateSize(); return }
+  const L = (await import('leaflet')).default
+  await import('leaflet/dist/leaflet.css')
+  const { lat, lng } = state.location
+  leaflet = L.map('map', { zoomControl: false, attributionControl: true, center: [lat, lng], zoom: 16 })
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19, detectRetina: true,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
+  }).addTo(leaflet)
+  const icon = L.divIcon({ className: 'jeep-marker', html: '', iconSize: [76, 76], iconAnchor: [38, 38] })
+  const marker = L.marker([lat, lng], { icon, interactive: false }).addTo(leaflet)
+  marker.getElement().appendChild($('#mini'))
+}
 function mini(on) {
-  if (on && !miniView && jeep) { miniView = jeep.miniView($('#mini-canvas')); miniView.spin(state.gear !== 'Parked' && !reduced.matches) }
+  if (on && !miniView && jeep) {
+    ensureMap().then(() => {
+      if (miniView || screen() !== 'location') return
+      miniView = jeep.miniView($('#mini-canvas'))
+      miniView.heading(state.location.heading ?? 0)
+      miniView.spin(state.gear !== 'Parked' && !reduced.matches)
+    })
+  }
   if (!on && miniView) { miniView.destroy(); miniView = null }
 }
 addEventListener('hashchange', route)
@@ -259,19 +280,6 @@ subscribe((s, patch) => {
   if ('night' in patch) jeep.setNight(isNight())
 })
 
-function mapSvg() {
-  // a few quiet streets around home; not a real map
-  return `<svg viewBox="0 0 360 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-    <g stroke="#36373b" stroke-width="10" stroke-linecap="round" fill="none">
-      <path d="M-10 62 H370" /><path d="M-10 128 H370" /><path d="M96 -10 V190" /><path d="M250 -10 V190" />
-    </g>
-    <g stroke="#2f3034" stroke-width="5" stroke-linecap="round" fill="none">
-      <path d="M-10 96 H370" /><path d="M172 -10 V190" /><path d="M312 -10 V190" /><path d="M40 -10 V190" />
-      <path d="M250 62 Q 300 40 370 20" />
-    </g>
-    <circle cx="180" cy="100" r="30" fill="rgba(255,255,255,0.04)" />
-  </svg>`
-}
 
 // ---------- go ----------
 route(); render()

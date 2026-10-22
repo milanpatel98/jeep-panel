@@ -200,16 +200,23 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   // Shares geometry and materials with the main model; its own small renderer. Call .destroy() when done.
   function miniView(canvas2) {
     const r2 = new THREE.WebGLRenderer({ canvas: canvas2, antialias: true, alpha: true })
-    r2.setPixelRatio(Math.min(window.devicePixelRatio, 2)); r2.toneMapping = THREE.ACESFilmicToneMapping; r2.toneMappingExposure = 1.05
+    r2.setPixelRatio(Math.min(window.devicePixelRatio, 3)); r2.toneMapping = THREE.ACESFilmicToneMapping; r2.toneMappingExposure = 1.7
     const s2 = new THREE.Scene(); s2.environment = new THREE.PMREMGenerator(r2).fromScene(new RoomEnvironment(), 0.02).texture
     const clone = root.clone(true); s2.add(clone)
     const extras = []; clone.traverse((o) => { if (o.isLight || o === clone.getObjectByProperty('isSpotLightTarget', true)) extras.push(o) }); for (const o of extras) o.removeFromParent()
-    const k2 = new THREE.DirectionalLight(0xffffff, 1.6); k2.position.set(3, 8, 5); s2.add(k2)
+    const k2 = new THREE.DirectionalLight(0xffffff, 2.6); k2.position.set(3, 8, 5); s2.add(k2)
+    s2.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2)); const rim2 = new THREE.DirectionalLight(0xdfe8ff, 1.6); rim2.position.set(-5, 6, -6); s2.add(rim2)
     const c2 = new THREE.PerspectiveCamera(22, 1, 0.1, 100)
     const wheelNodes2 = ['FL', 'FR', 'BL', 'BR'].map((n) => clone.getObjectByName(n)).filter(Boolean)
     let raf2 = 0, spinning = false, last = 0
     function size() { const w = canvas2.clientWidth, h = canvas2.clientHeight; if (!w || !h) return; r2.setSize(w, h, false); c2.aspect = w / h; c2.updateProjectionMatrix() }
-    function place() { const a = c2.aspect, d = Math.max(5, 4.6 / (2 * Math.tan(0.19) * a)); c2.position.set(front * d, 0.9 + d * 0.12, 0); c2.lookAt(0, 0.85, 0) }
+    // Uber-style: seen from above at ~58°, the car turned to its heading (0 = north/up, clockwise)
+    let heading = 0
+    function place() {
+      const el = THREE.MathUtils.degToRad(58), d = 15
+      c2.fov = 26; c2.position.set(0, Math.sin(el) * d, Math.cos(el) * d); c2.lookAt(0, 0.6, 0); c2.updateProjectionMatrix()
+      clone.rotation.y = -THREE.MathUtils.degToRad(heading) + (front > 0 ? Math.PI : 0)
+    }
     function draw(t) {
       raf2 = 0
       if (spinning) { const dt = last ? Math.min(0.05, (t - last) / 1000) : 0; last = t; for (const w of wheelNodes2) w.rotation.x += dt * 4.5 * front; raf2 = requestAnimationFrame(draw) }
@@ -219,6 +226,7 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
     size(); place(); raf2 = requestAnimationFrame(draw)
     return {
       spin(on) { spinning = on; last = 0; if (on && !raf2) raf2 = requestAnimationFrame(draw) },
+      heading(deg) { heading = deg; place(); if (!raf2) raf2 = requestAnimationFrame(draw) },
       destroy() { spinning = false; cancelAnimationFrame(raf2); ro.disconnect(); s2.environment.dispose(); r2.dispose(); r2.forceContextLoss?.() },
     }
   }
