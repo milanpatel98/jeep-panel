@@ -190,7 +190,6 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   let view = 'hero'
   function setView(name, ms = 900) {
     view = name
-    controls.enableRotate = name !== 'top'   // the top view stays put, like Tesla's
     let v = VIEWS[name]
     // top view: the Jeep's long axis follows the screen's long axis (front up on portrait, front right on landscape)
     if (name === 'top') {
@@ -271,6 +270,8 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   function kick() { if (!raf) raf = requestAnimationFrame(frame) }
   controls.addEventListener('change', kick)
   controls.addEventListener('start', kick)
+  // top view: drag it around freely; on release it glides back to the fitted view, so it never stays cropped
+  controls.addEventListener('end', () => { if (view === 'top') setView('top', 700) })
 
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight
