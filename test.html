@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#1b1c1e}canvas{width:100vw;height:100vh;display:block}</style></head>
+<body><canvas id="c"></canvas><script type="module">
+import { createJeep } from './src/jeep.js'
+const q = new URLSearchParams(location.search)
+const j = await createJeep(document.getElementById('c'), { url: '/jeep-panel/model/jeep.glb' })
+window.j = j
+if (q.get('view')) j.setView(q.get('view'), 1)
+for (const k of (q.get('open') || '').split(',').filter(Boolean)) j.setDoor(k, true)
+if (q.get('hood')) j.setHood(true)
+if (q.get('gate')) j.setGate(true)
+if (q.get('roof')) j.setRoof(q.get('roof'))
+if (q.get('lights')) j.setLights(true)
+if (q.get('night')) j.setNight(true)
+if (q.get('steer')) j.steer(+q.get('steer'))
+if (q.get('win')) j.setWindows(true)
+setTimeout(() => { window.__done = true }, 1500)
+</script></body></html>
