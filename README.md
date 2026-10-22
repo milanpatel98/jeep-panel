@@ -34,7 +34,7 @@ npm run dev
 
 **Icons:** [Phosphor Icons](https://github.com/phosphor-icons/core), MIT.
 
-**Map:** [Leaflet](https://leafletjs.com) (BSD-2), map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, tiles © [CARTO](https://carto.com/attributions).
+**Map:** [Leaflet](https://leafletjs.com) (BSD-2), map data and tiles © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, darkened in CSS.
 
 Personal project, not affiliated with Jeep or Stellantis.
 

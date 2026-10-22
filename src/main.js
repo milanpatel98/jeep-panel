@@ -73,9 +73,9 @@ async function ensureMap() {
   await import('leaflet/dist/leaflet.css')
   const { lat, lng } = state.location
   leaflet = L.map('map', { zoomControl: false, attributionControl: true, center: [lat, lng], zoom: 16 })
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 19, detectRetina: true,
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, className: 'dark-tiles',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(leaflet)
   const icon = L.divIcon({ className: 'jeep-marker', html: '', iconSize: [76, 76], iconAnchor: [38, 38] })
   const marker = L.marker([lat, lng], { icon, interactive: false }).addTo(leaflet)
