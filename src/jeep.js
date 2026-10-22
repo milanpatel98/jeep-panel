@@ -190,6 +190,8 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   let view = 'hero'
   function setView(name, ms = 900) {
     view = name
+    // drop any leftover drag momentum so the glide lands exactly
+    controls.enableDamping = false; controls.update(); controls.enableDamping = true
     let v = VIEWS[name]
     // top view: the Jeep's long axis follows the screen's long axis (front up on portrait, front right on landscape)
     if (name === 'top') {
