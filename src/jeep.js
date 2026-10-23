@@ -103,6 +103,15 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   window.__gate = { parts: gateParts.map((o) => o.name), min: gMin.toArray(), max: gMax.toArray(), rightX, front }
 
   const panels = byName('group1'), hardtop = byName('roof')
+  // The hardtop is one shell, so "panels off" cuts away its front section (above the front seats),
+  // like taking out the real Freedom panels. Hardtop materials are cloned so the cut never touches the body paint.
+  renderer.localClippingEnabled = true
+  const fl = local(byName(DOORS.FL))
+  const panelCut = new THREE.Plane(new THREE.Vector3(0, 0, -front), front * (front > 0 ? fl.min.z : fl.max.z))
+  hardtop.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone() })
+  const hardtopMats = []; hardtop.traverse((o) => { if (o.isMesh) hardtopMats.push(...[].concat(o.material)) })
+  // the shell's inner lining is light grey; real Wranglers have a black headliner, which also hides the cut edge
+  for (const m of hardtopMats) if (m.color && m !== glass && m.name !== 'Glass' && (m.color.r + m.color.g + m.color.b) / 3 > 0.3) { m.map = null; m.color.setRGB(0.03, 0.03, 0.033); m.needsUpdate = true }
   // fixed points on the body (closed position) so the UI can pin labels and tap targets to parts
   const anchors = {}
   for (const [k, n] of Object.entries(DOORS)) { const b = local(byName(n)); anchors[k] = new THREE.Vector3(b.c.x * 1.15, b.max.y * 0.8, b.c.z) }
@@ -162,7 +171,12 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   function setLights(on) { tween(() => state.lights, (v) => { state.lights = v; head.emissiveIntensity = v * 3.2; for (const b of beams) b.intensity = v * (state.night ? 60 : 18); for (const p of pools) p.material.opacity = v * (state.night ? 0.24 : 0); tail.emissiveIntensity = Math.max(v * 0.8, state.brake * 2.4) }, on ? 1 : 0, 350) }
   function setBrake(on) { tween(() => state.brake, (v) => { state.brake = v; tail.emissiveIntensity = Math.max(state.lights * 0.8, v * 2.4) }, on ? 1 : 0, 150) }
   let roofMode = 'on', peek = false
-  function applyRoof() { panels.visible = !peek && roofMode === 'on'; hardtop.visible = !peek && roofMode !== 'off'; kick() }
+  function applyRoof() {
+    panels.visible = !peek && roofMode === 'on'; hardtop.visible = !peek && roofMode !== 'off'
+    const cut = roofMode === 'panels' ? [panelCut] : []
+    for (const m of hardtopMats) { m.clippingPlanes = cut; m.clipShadows = true; m.needsUpdate = true }
+    kick()
+  }
   function setRoof(mode) { roofMode = mode; applyRoof() } // 'on' | 'panels' | 'off'
   function setPeek(on) { peek = on; applyRoof() }        // look inside (climate screen) without changing the real roof
   function setWindows(down) { for (const d of Object.values(doors)) for (const g of d.glass) g.visible = !down; kick() }
