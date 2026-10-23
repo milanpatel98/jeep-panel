@@ -97,7 +97,9 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   const panelBox = new THREE.Box3(); for (const o of gateParts) o.traverse((m) => { if (m.isMesh && [].concat(m.material).some((x) => x.name === 'JMI_1355060001_004')) panelBox.union(new THREE.Box3().setFromObject(m)) })
   const pMin = root.worldToLocal(panelBox.min.clone()), pMax = root.worldToLocal(panelBox.max.clone())
   const hingeZ = panelBox.isEmpty() ? (front > 0 ? gMax.z : gMin.z) : (front > 0 ? pMin.z : pMax.z)
-  const gate = { hinge: hingeAt(gateParts, new THREE.Vector3(rightX, 0, hingeZ)), open: 0 }
+  // pivot on the panel's own hinge edge, so the open gate stays tucked against the body
+  const hingeX = panelBox.isEmpty() ? rightX : (front > 0 ? pMin.x : pMax.x)
+  const gate = { hinge: hingeAt(gateParts, new THREE.Vector3(hingeX, 0, hingeZ)), open: 0 }
   window.__gate = { parts: gateParts.map((o) => o.name), min: gMin.toArray(), max: gMax.toArray(), rightX, front }
 
   const panels = byName('group1'), hardtop = byName('roof')
@@ -116,7 +118,7 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   const onHinge = {}
   for (const [k, h] of Object.entries(hinged)) { h.updateMatrixWorld(true); onHinge[k] = h.worldToLocal(root.localToWorld(anchors[k].clone())) }
   // how far the open gate reaches behind the car (for fitting the top view)
-  const gateReach = Math.abs(hingeZ) + Math.abs((front > 0 ? gMax.x : gMin.x) - rightX) * Math.sin(THREE.MathUtils.degToRad(80))
+  const gateReach = Math.abs(hingeZ) + Math.abs((front > 0 ? gMax.x : gMin.x) - hingeX) * Math.sin(THREE.MathUtils.degToRad(80))
   let gateTarget = false
   // the steering (front) wheels: the model's wheel nodes are named for the other end, so pick by position
   const wheelNodes = ['FL', 'FR', 'BL', 'BR'].map(byName).filter(Boolean).sort((a, b) => (local(b).c.z - local(a).c.z) * front)
@@ -289,5 +291,5 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   }
   new ResizeObserver(resize).observe(canvas); resize()
 
-  return { setDoor, setHood, setGate, setLights, setBrake, setRoof, setWindows, setDoorsOff, steer, setSignal, setNight, setView, setPeek, anchor, miniView, doors, front, kick, renderer, cam }
+  return { controls, root, setDoor, setHood, setGate, setLights, setBrake, setRoof, setWindows, setDoorsOff, steer, setSignal, setNight, setView, setPeek, anchor, miniView, doors, front, kick, renderer, cam }
 }
