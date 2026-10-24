@@ -10,6 +10,9 @@ nonisolated struct Session: Codable, Sendable {
 
 nonisolated enum UconnectError: Error, Equatable {
     case badLogin
+    /// accounts.login answered with another Gigya error (locked account, rate limit, ...).
+    /// Like `badLogin`, the app stops and asks instead of trying again.
+    case loginRejected(Int)
     case badPin
     case network
     case timeout
@@ -206,6 +209,9 @@ nonisolated struct UconnectAuth: UconnectAuthProtocol {
         if statusCode != 200 || errorCode != 0 {
             if errorCode == Self.invalidLoginErrorCode {
                 throw UconnectError.badLogin
+            }
+            if call == "accounts.login" && errorCode != 0 {
+                throw UconnectError.loginRejected(errorCode)
             }
             throw UconnectError.unexpected("\(call) failed: errorCode \(errorCode)")
         }

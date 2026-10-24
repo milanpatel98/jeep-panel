@@ -23,6 +23,7 @@ private nonisolated func isASCIIDigit(_ c: Character) -> Bool {
 nonisolated func signInMessage(for error: UconnectError) -> String {
     switch error {
     case .badLogin: "Email or password is wrong."
+    case .loginRejected: "Uconnect turned down the sign-in. Try again later."
     case .badPin: "PIN is wrong."
     case .network, .timeout: "No connection. Try again."
     default: "Couldn't sign in. Try again."

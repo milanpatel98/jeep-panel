@@ -215,6 +215,7 @@ struct SignInFormTests {
 
     @Test func errorCopy() {
         #expect(signInMessage(for: .badLogin) == "Email or password is wrong.")
+        #expect(signInMessage(for: .loginRejected(403120)) == "Uconnect turned down the sign-in. Try again later.")
         #expect(signInMessage(for: .badPin) == "PIN is wrong.")
         #expect(signInMessage(for: .network) == "No connection. Try again.")
         #expect(signInMessage(for: .timeout) == "No connection. Try again.")

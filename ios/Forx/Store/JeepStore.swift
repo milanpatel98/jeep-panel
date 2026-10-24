@@ -40,6 +40,12 @@ final class JeepStore {
     static let messageDuration: Duration = .seconds(4)
     /// Log in again this long before the session expires (a minute ahead of the API's own margin).
     static let reloginMargin: TimeInterval = UconnectAPI.sessionMargin + 60
+    /// At least this long between any two automatic logins (Gigya locks accounts that retry).
+    static let loginGap: TimeInterval = 5 * 60
+    /// After a login fails for another reason than the network: wait this long, doubling on
+    /// each failure in a row, up to `loginBackoffMax`.
+    static let loginBackoff: TimeInterval = 15 * 60
+    static let loginBackoffMax: TimeInterval = 2 * 60 * 60
 
     private(set) var snapshot: JeepSnapshot? = nil
     private(set) var pending: Set<JeepCommand> = []
@@ -64,6 +70,10 @@ final class JeepStore {
 
     @ObservationIgnored private var api: (any UconnectAPIProtocol)? = nil
     @ObservationIgnored private var sessionExpiresAt: Date? = nil
+    /// No automatic login before this time (see `loginGap` and `loginBackoff`).
+    @ObservationIgnored private var nextLoginAllowedAt: Date? = nil
+    /// Automatic logins that failed in a row (not counting network failures).
+    @ObservationIgnored private var loginFailures = 0
     @ObservationIgnored private var services: [String] = []
     /// Bumped on sign-in and sign-out so late results of the old account are dropped.
     @ObservationIgnored private var epoch = 0
@@ -131,6 +141,8 @@ final class JeepStore {
         epoch += 1
         api = makeAPI(session)
         sessionExpiresAt = session.expiresAt
+        loginFailures = 0
+        nextLoginAllowedAt = now().addingTimeInterval(Self.loginGap)
         vin = nil
         services = []
         offline = false
@@ -149,6 +161,8 @@ final class JeepStore {
         confirmed = []
         api = nil
         sessionExpiresAt = nil
+        nextLoginAllowedAt = nil
+        loginFailures = 0
         vin = nil
         services = []
         snapshot = nil
@@ -263,9 +277,11 @@ final class JeepStore {
         return now() >= sessionExpiresAt.addingTimeInterval(-Self.reloginMargin)
     }
 
-    /// Logs in again from the Vault; joins a login already running. A wrong password
-    /// sets `needsSignIn` and no further login is tried until the owner signs in
-    /// (Gigya locks accounts that retry).
+    /// Logs in again from the Vault; joins a login already running. A wrong password, or
+    /// any other error Gigya gives for the login, sets `needsSignIn` and no further login is
+    /// tried until the owner signs in (Gigya locks accounts that retry). Logins are at least
+    /// 5 min apart; after any other non-network failure the next one waits 15 min, doubling
+    /// up to 2 h.
     private func relogin() async -> Bool {
         if let running = reloginTask {
             return await running.value
@@ -285,6 +301,9 @@ final class JeepStore {
             needsSignIn = true
             return false
         }
+        let started = now()
+        if let next = nextLoginAllowedAt, started < next { return false }
+        nextLoginAllowedAt = started.addingTimeInterval(Self.loginGap)
         let epoch = self.epoch
         let session: Session
         do throws(UconnectError) {
@@ -292,13 +311,20 @@ final class JeepStore {
         } catch {
             guard epoch == self.epoch else { return false }
             switch error {
-            case .badLogin: needsSignIn = true
-            case .network: offline = true
-            default: break
+            case .badLogin, .loginRejected:
+                needsSignIn = true
+            case .network:
+                offline = true
+            default:
+                loginFailures += 1
+                let wait = min(
+                    Self.loginBackoff * pow(2, Double(min(loginFailures - 1, 16))), Self.loginBackoffMax)
+                nextLoginAllowedAt = started.addingTimeInterval(wait)
             }
             return false
         }
         guard epoch == self.epoch else { return false }
+        loginFailures = 0
         vault.saveSession(session)
         sessionExpiresAt = session.expiresAt
         if let api {

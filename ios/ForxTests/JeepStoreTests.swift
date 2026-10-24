@@ -115,6 +115,10 @@ private nonisolated final class FakeAuth: UconnectAuthProtocol {
 
     var calls: Int { state.withLock { $0.calls } }
 
+    func setResult(_ result: Result<Session, UconnectError>) {
+        state.withLock { $0.result = result }
+    }
+
     func login(email: String, password: String) async throws(UconnectError) -> Session {
         let result = state.withLock { s in
             s.calls += 1
@@ -212,6 +216,15 @@ private final class ManualSleep {
     }
 }
 
+/// The store's clock; tests move it forward.
+private final class TestClock {
+    var now = TestData.start
+
+    func advance(_ seconds: TimeInterval) {
+        now = now.addingTimeInterval(seconds)
+    }
+}
+
 /// Lets queued main-actor work run until `condition` holds (bounded).
 private func settle(until condition: () -> Bool) async {
     for _ in 0..<10_000 where !condition() {
@@ -225,6 +238,7 @@ private final class Harness {
     let vault: FakeVault
     let faceID: FakeFaceID
     let sleeper: ManualSleep
+    let clock: TestClock
     let cache: SnapshotCache
     let store: JeepStore
 
@@ -239,6 +253,7 @@ private final class Harness {
         let vault = FakeVault(signedIn: signedIn, session: session)
         let faceID = FakeFaceID(answer: faceIDAnswer)
         let sleeper = ManualSleep()
+        let clock = TestClock()
         let cache = SnapshotCache(url: FileManager.default.temporaryDirectory
             .appendingPathComponent("JeepStoreTests-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("snapshot.json"))
@@ -247,6 +262,7 @@ private final class Harness {
         self.vault = vault
         self.faceID = faceID
         self.sleeper = sleeper
+        self.clock = clock
         self.cache = cache
         store = JeepStore(
             makeAPI: { _ in api },
@@ -254,7 +270,7 @@ private final class Harness {
             vault: vault,
             faceID: faceID,
             cache: cache,
-            now: { TestData.start },
+            now: { clock.now },
             sleep: { await sleeper.sleep($0) })
     }
 
@@ -395,6 +411,93 @@ struct JeepStoreTests {
         #expect(h.auth.calls == 1)
         #expect(h.store.needsSignIn == true)
         #expect(h.api.updates == 0)
+        #expect(h.api.sent.isEmpty)
+        h.finish()
+    }
+
+    @Test func reloginUnexpectedFailureBacksOff() async {
+        // A session about to expire: every refresh wants a login.
+        let h = Harness(session: TestData.session(expiresIn: 60), login: .failure(.unexpected("HTTP 500")))
+
+        await h.store.refresh()
+        #expect(h.auth.calls == 1)
+        #expect(h.store.needsSignIn == false)  // not a sign-in problem: back off instead
+
+        // Foreground ticks, pull-to-refresh and taps don't log in again for 15 min.
+        await h.store.refresh()
+        await h.store.perform(.lock)
+        h.clock.advance(5 * 60)
+        await h.store.refresh()
+        h.clock.advance(10 * 60 - 1)
+        await h.store.refresh()
+        #expect(h.auth.calls == 1)
+        #expect(h.api.sent.isEmpty)
+
+        h.clock.advance(1)  // 15 min after the first
+        await h.store.refresh()
+        #expect(h.auth.calls == 2)
+
+        // Second failure in a row: 30 min.
+        h.clock.advance(30 * 60 - 1)
+        await h.store.refresh()
+        #expect(h.auth.calls == 2)
+        h.clock.advance(1)
+        await h.store.refresh()
+        #expect(h.auth.calls == 3)
+
+        // Third: 60 min. Fourth and later: capped at 2 h.
+        h.clock.advance(60 * 60)
+        await h.store.refresh()
+        #expect(h.auth.calls == 4)
+        h.clock.advance(2 * 60 * 60)
+        await h.store.refresh()
+        #expect(h.auth.calls == 5)
+        h.clock.advance(2 * 60 * 60 - 1)
+        await h.store.refresh()
+        #expect(h.auth.calls == 5)
+        h.clock.advance(1)
+        await h.store.refresh()
+        #expect(h.auth.calls == 6)
+
+        // It works again: logged in, and the Jeep is read.
+        h.auth.setResult(.success(Session(
+            uid: "uid-fake", aws: TestData.session(expiresIn: 0).aws,
+            expiresAt: h.clock.now.addingTimeInterval(4 * 3600))))
+        h.clock.advance(2 * 60 * 60)
+        await h.store.refresh()
+        #expect(h.auth.calls == 7)
+        #expect(h.store.snapshot != nil)
+        #expect(h.store.needsSignIn == false)
+        h.finish()
+    }
+
+    @Test func loginsAreAtLeastFiveMinutesApart() async {
+        let h = Harness(session: TestData.session(expiresIn: 60))
+        await h.store.refresh()
+        #expect(h.auth.calls == 1)
+
+        // The API says the new session expired right away (e.g. a phone clock that is off).
+        h.api.fail("info", .sessionExpired)
+        await h.store.refresh()
+        #expect(h.auth.calls == 1)
+
+        h.clock.advance(5 * 60)
+        h.api.fail("info", .sessionExpired)
+        await h.store.refresh()
+        #expect(h.auth.calls == 2)
+        h.finish()
+    }
+
+    @Test func reloginRejectedStopsAndAsks() async {
+        // Any Gigya error from accounts.login (locked account, rate limit): stop and ask.
+        let h = Harness(session: TestData.session(expiresIn: 60), login: .failure(.loginRejected(403120)))
+
+        await h.store.refresh()
+        #expect(h.store.needsSignIn == true)
+        h.clock.advance(3 * 60 * 60)
+        await h.store.refresh()
+        await h.store.perform(.lock)
+        #expect(h.auth.calls == 1)
         #expect(h.api.sent.isEmpty)
         h.finish()
     }

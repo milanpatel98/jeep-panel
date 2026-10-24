@@ -96,6 +96,19 @@ struct UconnectAuthTests {
         #expect(stub.sent.count == 2)
     }
 
+    @Test func otherLoginErrorIsRejected() async {
+        let stub = StubTransport()
+        stub.enqueue(body: gigyaOK, match: gigyaCall("accounts.webSdkBootstrap"))
+        // 403120: account temporarily locked. Any non-zero errorCode from accounts.login stops.
+        let locked = Data(#"{"statusCode": 403, "errorCode": 403120, "errorMessage": "Account temporarily locked"}"#.utf8)
+        stub.enqueue(status: 200, body: locked, match: gigyaCall("accounts.login"))
+
+        await #expect(throws: UconnectError.loginRejected(403120)) {
+            try await UconnectAuth(transport: stub).login(email: email, password: password)
+        }
+        #expect(stub.sent.count == 2)
+    }
+
     @Test func unreachableIsNetwork() async {
         let stub = StubTransport()  // nothing queued: the stub throws like a dropped connection
         await #expect(throws: UconnectError.network) {
