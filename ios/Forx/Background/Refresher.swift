@@ -19,9 +19,9 @@ nonisolated func newAlerts(
 nonisolated func nextUnlockedSince(_ since: Date?, locked: Bool?, ignitionOn: Bool? = nil, now: Date) -> Date? {
     if ignitionOn == true { return nil }  // driving or running: not left unlocked
     switch locked {
-    case false?: since ?? now
-    case true?: nil
-    case nil: since
+    case false?: return since ?? now
+    case true?: return nil
+    case nil: return since
     }
 }
 
