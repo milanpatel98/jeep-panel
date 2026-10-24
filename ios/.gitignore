@@ -1,0 +1,6 @@
+*.xcodeproj
+DerivedData/
+build/
+xcuserdata/
+JeepApp/Info.plist
+.DS_Store

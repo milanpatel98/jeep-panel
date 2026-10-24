@@ -1,0 +1,48 @@
+name: JeepApp
+options:
+  bundleIdPrefix: com.milanpatel
+  deploymentTarget: { iOS: "26.0" }
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  JeepApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: JeepApp
+        excludes: ["Web"]
+      - path: JeepApp/Web
+        type: folder
+    info:
+      path: JeepApp/Info.plist
+      properties:
+        CFBundleDisplayName: Jeep
+        UILaunchScreen: {}
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.milanpatel.JeepApp.refresh]
+        NSFaceIDUsageDescription: "Face ID confirms it's you before unlocking the Jeep."
+        UIUserInterfaceStyle: Dark
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.milanpatel.JeepApp
+  JeepAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [JeepAppTests]
+    dependencies:
+      - target: JeepApp
+schemes:
+  JeepApp:
+    build:
+      targets:
+        JeepApp: all
+    test:
+      targets: [JeepAppTests]
