@@ -1,9 +1,16 @@
 // One place for everything the app knows about the car.
-// Sample data for now; a real feed replaces `set()` calls with its own, the UI does not change.
+// In a normal browser: sample data and local toggles.
+// Inside the iPhone app (WKWebView with a `jeep` message handler): everything starts
+// off or unknown, and Swift fills it in through window.jeepNative.apply(patch).
 
 const listeners = new Set()
 
-export const state = {
+// decided once, at import: the defaults below depend on it
+export const NATIVE = !!globalThis.window?.webkit?.messageHandlers?.jeep
+
+const COMMANDS = ['lock', 'climate', 'lights', 'horn', 'gate']
+
+const sample = {
   name: 'Wrangler',
   gear: 'Parked',
   locked: true,
@@ -24,6 +31,28 @@ export const state = {
   trail: { name: 'Guanella Pass', miles: 42 },
   odometer: 14_212,
   night: null,         // null = follow the clock
+}
+
+// nothing is known until the Jeep says so; null shows as "—"
+const native = {
+  name: 'Milan',
+  locked: null,
+  lights: false,
+  battery: { pct: null, miles: null, limit: null, charging: false, fullBy: null, added: null },
+  fuel: { miles: null },
+  climate: { on: false, target: null, interior: null, exterior: null, vent: false },
+  odometer: null,
+}
+
+export const state = {
+  ...sample,
+  ...(NATIVE ? native : {}),
+  // bridge keys (Swift sends these; the browser never changes them)
+  pending: Object.fromEntries(COMMANDS.map((k) => [k, false])),
+  supported: NATIVE ? [] : [...COMMANDS],
+  updated: '',
+  offline: false,
+  message: null,
 }
 
 export function set(patch) {
@@ -51,6 +80,6 @@ export function attention() {
   if (state.gate) parts.push('Tailgate open')
   if (state.lights) parts.push('Lights on')
   if (state.hazards) parts.push('Hazards on')
-  if (!state.locked) parts.push('Unlocked')
+  if (state.locked === false) parts.push('Unlocked')
   return parts
 }

@@ -1,6 +1,7 @@
 import './style.css'
 import { createJeep } from './jeep.js'
 import { state, set, subscribe, isNight, attention } from './state.js'
+import { request, isNative } from './native.js'
 import { I } from './icons.js'
 
 const $ = (s, el = document) => el.querySelector(s)
@@ -9,6 +10,8 @@ const app = $('#app'), stage = $('#stage'), sheet = $('#sheet'), tags = $('#tags
 const reduced = matchMedia('(prefers-reduced-motion: reduce)')
 const wide = matchMedia('(min-width: 900px) and (orientation: landscape), (min-width: 1200px)')
 const glide = () => (reduced.matches ? 1 : 900)
+const NATIVE = isNative()
+const dash = (v, unit = '') => (v == null ? '—' : v + unit)
 
 // ---------- static glyphs ----------
 $('#i-caret').innerHTML = I.caretDown
@@ -138,28 +141,32 @@ sheet.addEventListener('click', (e) => { if (e.target.closest('a.row') && !wide.
 
 // ---------- controls ----------
 const toggleDoor = (k) => set({ doors: { [k]: !state.doors[k] } })
+// the Jeep's own commands: Swift sends them when native, local toggles in the browser
+const lockCmd = () => request(state.locked ? 'unlock' : 'lock')
+const climateCmd = () => request(state.climate.on ? 'climateOff' : 'climateOn')
+const honk = () => { stage.classList.remove('honk'); void stage.offsetWidth; stage.classList.add('honk'); car.setBrake(true); setTimeout(() => car.setBrake(false), 300); navigator.vibrate?.(40) }
 $$('.q').forEach((b) => b.addEventListener('click', () => {
   const q = b.dataset.q
-  if (q === 'lock') set({ locked: !state.locked })
-  if (q === 'climate') set({ climate: { on: !state.climate.on } })
-  if (q === 'charge') set({ battery: { charging: !state.battery.charging } })
-  if (q === 'lights') set({ lights: !state.lights })
+  if (q === 'lock') lockCmd()
+  if (q === 'climate') climateCmd()
+  if (q === 'charge' && !NATIVE) set({ battery: { charging: !state.battery.charging } })
+  if (q === 'lights') request('lights')
 }))
 $$('.tile[data-t]').forEach((b) => b.addEventListener('click', () => {
   const t = b.dataset.t
   if (t === 'doors') { const open = !Object.values(state.doors).every(Boolean); set({ doors: { FL: open, FR: open, BL: open, BR: open } }) }
   if (t === 'hood') set({ hood: !state.hood })
-  if (t === 'gate') set({ gate: !state.gate })
+  if (t === 'gate') request('gate')
   if (t === 'windows') set({ windows: !state.windows })
-  if (t === 'lights') set({ lights: !state.lights })
+  if (t === 'lights') request('lights')
   if (t === 'hazards') set({ hazards: !state.hazards })
   if (t === 'doorsOff') set({ doorsOff: !state.doorsOff })
-  if (t === 'lock') set({ locked: !state.locked })
-  if (t === 'horn') { stage.classList.remove('honk'); void stage.offsetWidth; stage.classList.add('honk'); car.setBrake(true); setTimeout(() => car.setBrake(false), 300); navigator.vibrate?.(40) }
+  if (t === 'lock') lockCmd()
+  if (t === 'horn') { request('horn'); if (!NATIVE) honk() }
 }))
 $$('.seg-btn').forEach((b) => b.addEventListener('click', () => set({ roof: b.dataset.roof })))
 $$('.strip-btn[data-c]').forEach((b) => b.addEventListener('click', () => {
-  if (b.dataset.c === 'power') set({ climate: { on: !state.climate.on } })
+  if (b.dataset.c === 'power') climateCmd()
   if (b.dataset.c === 'vent') set({ climate: { vent: !state.climate.vent } })
 }))
 $('#temp-down').addEventListener('click', () => set({ climate: { target: Math.max(60, state.climate.target - 1) } }))
@@ -167,6 +174,11 @@ $('#temp-up').addEventListener('click', () => set({ climate: { target: Math.min(
 $('#limit').addEventListener('input', (e) => set({ battery: { limit: +e.target.value } }))
 $('#night').addEventListener('click', () => set({ night: !isNight() }))
 setInterval(() => { if (state.night === null) car.setNight(isNight()), render() }, 60_000)
+
+// inside the iPhone app, controls the Jeep can't do are hidden, not greyed
+if (NATIVE) {
+  for (const el of $$('.q[data-q="charge"], .tile[data-t="doors"], .tile[data-t="hood"], .tile[data-t="windows"], .tile[data-t="hazards"], .tile[data-t="doorsOff"], .seg, .hint, .strip-btn[data-c="vent"], #temp-down, #temp-up, #limit')) el.classList.add('hidden')
+}
 
 // tap targets and labels that ride on the car
 const PARTS = ['FL', 'FR', 'BL', 'BR', 'hood', 'gate', 'roof']
@@ -177,6 +189,7 @@ for (const p of PARTS) {
   const h = document.createElement('button'); h.className = 'hit'; h.type = 'button'
   h.setAttribute('aria-label', { FL: 'Driver door', FR: 'Passenger door', BL: 'Rear left door', BR: 'Rear right door', hood: 'Hood', gate: 'Tailgate' }[p])
   h.addEventListener('click', () => (p === 'hood' ? set({ hood: !state.hood }) : p === 'gate' ? set({ gate: !state.gate }) : toggleDoor(p)))
+  if (NATIVE) h.classList.add('hidden')   // the Jeep can't open doors remotely
   tags.appendChild(h); hitEls[p] = h
 }
 const SEATS = ['seatFL', 'seatFR', 'seatBL', 'seatBM', 'seatBR', 'wheel']
@@ -187,6 +200,7 @@ for (const k of SEATS) {
   b.innerHTML = k === 'wheel' ? I.steering : HEAT
   b.setAttribute('aria-label', k === 'wheel' ? 'Heated steering wheel' : 'Heated seat')
   b.addEventListener('click', () => set({ heat: { [k]: !state.heat[k] } }))
+  if (NATIVE) b.classList.add('hidden')
   tags.appendChild(b); seatEls[k] = b
 }
 function placeTags() {
@@ -201,37 +215,51 @@ function placeTags() {
 }
 
 // ---------- render: state → screen ----------
-const rangeEl = $('#range'), gearEl = $('#gear'), nightBtn = $('#night')
+const rangeEl = $('#range'), gearEl = $('#gear'), nightBtn = $('#night'), updatedEl = $('#updated'), nameEl = $('#name')
+let messageUntil = 0, lastMessage = null
 function render() {
-  const b = state.battery, c = state.climate
-  rangeEl.innerHTML = `<span class="batt${b.charging ? ' charging' : ''}" style="--p:${b.pct / 100}"><i></i></span>${b.miles} mi`
+  const b = state.battery || {}, c = state.climate || {}
+  nameEl.firstChild.textContent = state.name + ' '
+  rangeEl.innerHTML = `<span class="batt${b.charging ? ' charging' : ''}" style="--p:${(b.pct ?? 0) / 100}"><i></i></span>${dash(b.miles, ' mi')}`
   const att = attention()
-  gearEl.textContent = att.length ? att.join(' · ') : state.gear
-  gearEl.classList.toggle('attention', att.length > 0)
+  const msg = state.message && Date.now() < messageUntil ? state.message : null
+  gearEl.textContent = msg || (att.length ? att.join(' · ') : state.gear)
+  gearEl.classList.toggle('attention', !!msg || att.length > 0)
+  updatedEl.textContent = state.updated || ''
+  for (const el of [rangeEl, $('#charge'), $('#climate-sub'), $('#row-climate'), $('#odo')]) el.classList.toggle('stale', !!state.offline)
   nightBtn.innerHTML = isNight() ? I.sun : I.moon
   nightBtn.setAttribute('aria-label', isNight() ? 'Day mode' : 'Night mode')
 
   // quick controls
   const q = (k) => $(`.q[data-q="${k}"]`)
-  q('lock').innerHTML = state.locked ? I.lock : I.lockOpen; q('lock').classList.toggle('on', !state.locked)
+  q('lock').innerHTML = state.locked === false ? I.lockOpen : I.lock; q('lock').classList.toggle('on', state.locked === false)
   q('climate').innerHTML = I.fan; q('climate').classList.toggle('on', c.on)
   q('charge').innerHTML = I.lightning; q('charge').classList.toggle('on', b.charging)
   q('lights').innerHTML = I.headlights; q('lights').classList.toggle('on', state.lights)
 
+  // commands: a ring while the Jeep is working on it; hidden if the Jeep can't do it
+  const CMD = { lock: ['.q[data-q="lock"]', '.tile[data-t="lock"]'], climate: ['.q[data-q="climate"]', '.strip-btn[data-c="power"]'], lights: ['.q[data-q="lights"]', '.tile[data-t="lights"]'], horn: ['.tile[data-t="horn"]'], gate: ['.tile[data-t="gate"]'] }
+  const sup = state.supported || []
+  for (const [k, sels] of Object.entries(CMD)) for (const sel of sels) {
+    const el = $(sel)
+    el.classList.toggle('pending', !!state.pending?.[k])
+    el.classList.toggle('hidden', NATIVE && !sup.includes(k))
+  }
+
   // charging
   $('#charge').classList.toggle('charging', b.charging)
-  $('#charge-title').textContent = `Charge limit ${b.limit}%`
-  $('#charge-state').textContent = b.charging ? 'Charging' : b.pct >= b.limit ? 'Charged' : 'Not charging'
-  $('#charge-sub').textContent = b.charging ? `Full by ${b.fullBy} · ${b.added} mi added` : `${b.pct}% · ${state.fuel.miles} mi on gas`
-  const lim = $('#limit'); if (+lim.value !== b.limit) lim.value = b.limit
-  lim.style.setProperty('--fill', ((b.limit - 50) / 50) * 100 + '%')
+  $('#charge-title').textContent = `Charge limit ${dash(b.limit, '%')}`
+  $('#charge-state').textContent = b.charging ? 'Charging' : b.pct != null && b.limit != null && b.pct >= b.limit ? 'Charged' : 'Not charging'
+  $('#charge-sub').textContent = b.charging ? `Full by ${dash(b.fullBy)} · ${dash(b.added, ' mi')} added` : `${dash(b.pct, '%')} · ${dash(state.fuel?.miles, ' mi')} on gas`
+  const lim = $('#limit')
+  if (b.limit != null) { if (+lim.value !== b.limit) lim.value = b.limit; lim.style.setProperty('--fill', ((b.limit - 50) / 50) * 100 + '%') }
 
   // rows
-  const rc = $('#row-controls'); rc.textContent = att.filter((s) => !/Unlocked|Lights|Hazards/.test(s)).join(' · ') || (state.locked ? 'Locked' : 'Unlocked'); rc.classList.toggle('attention', /open/.test(rc.textContent))
-  $('#row-climate').textContent = (c.on ? `On · ${c.target.toFixed(0)}° · ` : '') + `Interior ${c.interior}°`
+  const rc = $('#row-controls'); rc.textContent = att.filter((s) => !/Unlocked|Lights|Hazards/.test(s)).join(' · ') || (state.locked == null ? '—' : state.locked ? 'Locked' : 'Unlocked'); rc.classList.toggle('attention', /open/.test(rc.textContent))
+  $('#row-climate').textContent = (c.on ? `On · ${dash(c.target?.toFixed(0), '°')} · ` : '') + `Interior ${dash(c.interior, '°')}`
   $('#row-location').textContent = state.location.label
   $('#row-trails').textContent = `Last: ${state.trail.name}, ${state.trail.miles} mi`
-  $('#odo').textContent = state.odometer.toLocaleString() + ' mi'
+  $('#odo').textContent = dash(state.odometer?.toLocaleString(), ' mi')
 
   // tiles
   const allDoors = Object.values(state.doors).every(Boolean), anyDoor = Object.values(state.doors).some(Boolean)
@@ -243,12 +271,12 @@ function render() {
   tile('lights').classList.toggle('on', state.lights)
   tile('hazards').classList.toggle('on', state.hazards)
   tile('doorsOff').classList.toggle('on', state.doorsOff)
-  tile('lock').classList.toggle('open', !state.locked); tile('lock').querySelector('i').innerHTML = state.locked ? I.lock : I.lockOpen; tile('lock').querySelector('span').textContent = state.locked ? 'Locked' : 'Unlocked'
+  tile('lock').classList.toggle('open', state.locked === false); tile('lock').querySelector('i').innerHTML = state.locked === false ? I.lockOpen : I.lock; tile('lock').querySelector('span').textContent = state.locked == null ? 'Lock' : state.locked ? 'Locked' : 'Unlocked'
   $$('.seg-btn').forEach((s) => s.setAttribute('aria-checked', s.dataset.roof === state.roof))
 
   // climate
-  $('#temp').textContent = c.target.toFixed(0)
-  $('#climate-sub').textContent = `Interior ${c.interior}°F · Exterior ${c.exterior}°F`
+  $('#temp').textContent = dash(c.target?.toFixed(0))
+  $('#climate-sub').textContent = `Interior ${dash(c.interior, '°F')} · Exterior ${dash(c.exterior, '°F')}`
   const pw = $('.strip-btn[data-c="power"]'); pw.classList.toggle('on', c.on); pw.querySelector('span').textContent = c.on ? 'On' : 'Off'
   $('.strip-btn[data-c="vent"]').classList.toggle('on', c.vent)
   for (const k of SEATS) seatEls[k].classList.toggle('on', !!state.heat[k])
@@ -266,6 +294,11 @@ function render() {
 }
 
 subscribe((s, patch) => {
+  // a new message shows in the status line for 4 s (Swift resends the same one with every patch)
+  if ('message' in patch) {
+    if (patch.message && patch.message !== lastMessage) { messageUntil = Date.now() + 4000; setTimeout(render, 4000) }
+    lastMessage = patch.message
+  }
   render()
   if ('gear' in patch) miniView?.spin(s.gear !== 'Parked' && !reduced.matches)
   if (!jeep) return

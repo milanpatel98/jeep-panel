@@ -1,0 +1,50 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+
+// state.js decides native vs browser when it is imported, so every test
+// loads a fresh copy (the query string makes node treat it as a new module).
+let n = 0
+const fresh = () => import(`../src/state.js?t=${++n}`)
+const fakeNative = () => { globalThis.window = { webkit: { messageHandlers: { jeep: { postMessage() {} } } } } }
+
+test('nativeDefaultsAreOff', async () => {
+  fakeNative()
+  try {
+    const { state } = await fresh()
+    assert.equal(state.locked, null)
+    assert.equal(state.lights, false)
+    assert.equal(state.climate.on, false)
+    assert.equal(state.name, 'Milan')
+    assert.equal(state.battery.pct, null)
+    assert.equal(state.battery.miles, null)
+    assert.equal(state.fuel.miles, null)
+    assert.equal(state.odometer, null)
+    assert.deepEqual(state.supported, [])
+    assert.deepEqual(state.pending, { lock: false, climate: false, lights: false, horn: false, gate: false })
+    assert.equal(state.offline, false)
+    assert.equal(state.message, null)
+    assert.equal(state.updated, '')
+  } finally { delete globalThis.window }
+})
+
+test('browserDefaultsUnchanged', async () => {
+  delete globalThis.window
+  const { state } = await fresh()
+  assert.equal(state.name, 'Wrangler')
+  assert.equal(state.locked, true)
+  assert.equal(state.lights, false)
+  assert.deepEqual(state.battery, { pct: 84, miles: 18, limit: 80, charging: true, fullBy: '6:10 AM', added: 12 })
+  assert.deepEqual(state.fuel, { miles: 312 })
+  assert.deepEqual(state.climate, { on: false, target: 70, interior: 68, exterior: 54, vent: false })
+  assert.equal(state.odometer, 14_212)
+  assert.equal(state.location.label, 'Home')
+  assert.equal(state.trail.name, 'Guanella Pass')
+})
+
+test('attentionDoesNotCallUnknownLockUnlocked', async () => {
+  fakeNative()
+  try {
+    const { attention } = await fresh()
+    assert.ok(!attention().includes('Unlocked'))
+  } finally { delete globalThis.window }
+})

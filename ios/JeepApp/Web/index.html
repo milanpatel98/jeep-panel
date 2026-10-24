@@ -1,3 +1,128 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Jeep</title></head>
-<body style="background:#000"></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Wrangler</title>
+  <meta name="theme-color" content="#222326" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Wrangler" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" href="icons/icon-192.png" type="image/png" />
+  <script type="module" crossorigin src="./assets/index-WxpGVv5H.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BXIWYMrj.css">
+</head>
+<body>
+  <div id="app" data-screen="home" data-loading="1">
+    <header class="top">
+      <button class="name" id="name" type="button">Wrangler <span class="caret" id="i-caret"></span></button>
+      <div class="status">
+        <span class="range" id="range"></span>
+        <span class="gear" id="gear">Parked</span>
+        <span class="updated" id="updated"></span>
+      </div>
+      <button class="icon-btn night" id="night" type="button" aria-label="Night mode"></button>
+    </header>
+
+    <div class="stage" id="stage">
+      <canvas id="c" aria-label="Your Jeep. Drag to look around."></canvas>
+      <div class="tags" id="tags"></div>
+      <a class="fab" id="fab" href="#/" aria-label="Back"></a>
+      <div class="loader" id="loader" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <svg class="ring" viewBox="0 0 120 120"><circle cx="60" cy="60" r="56" class="track" /><circle cx="60" cy="60" r="56" class="bar" id="bar" /></svg>
+        <span class="glyph" id="loader-glyph"></span>
+        <span class="pct" id="pct">0%</span>
+      </div>
+      <nav class="quick" aria-label="Quick controls">
+        <button class="q" data-q="lock" type="button" aria-label="Lock"></button>
+        <button class="q" data-q="climate" type="button" aria-label="Climate"></button>
+        <button class="q" data-q="charge" type="button" aria-label="Charging"></button>
+        <button class="q" data-q="lights" type="button" aria-label="Lights"></button>
+      </nav>
+    </div>
+
+    <aside class="sheet" id="sheet">
+      <div class="grip" id="grip"><i></i></div>
+
+      <section class="panel" data-panel="home">
+        <div class="charge" id="charge">
+          <div class="charge-top"><b id="charge-title">Charge limit 80%</b><span id="charge-state">Charging</span></div>
+          <div class="charge-sub" id="charge-sub">Full by 6:10 AM · 12 mi added</div>
+          <input class="slider" id="limit" type="range" min="50" max="100" step="5" value="80" aria-label="Charge limit" />
+        </div>
+        <nav class="rows">
+          <a class="row" href="#/controls"><span>Controls</span><em id="row-controls"></em></a>
+          <a class="row" href="#/climate"><span>Climate</span><em id="row-climate">Interior 68°</em></a>
+          <a class="row" href="#/location"><span>Location</span><em id="row-location">Home</em></a>
+          <a class="row" href="#/trails"><span>Trails</span><em id="row-trails">Last: Guanella Pass, 42 mi</em></a>
+          <a class="row" href="#/about"><span>About</span><em>Wrangler 4xe · Lifted, 35" tires</em></a>
+        </nav>
+      </section>
+
+      <section class="panel" data-panel="controls">
+        <header class="panel-head"><a class="back" href="#/" aria-label="Back"></a><h2>Controls</h2></header>
+        <div class="tiles">
+          <button class="tile" data-t="doors" type="button"><i></i><span>Doors</span></button>
+          <button class="tile" data-t="hood" type="button"><i></i><span>Hood</span></button>
+          <button class="tile" data-t="gate" type="button"><i></i><span>Tailgate</span></button>
+          <button class="tile" data-t="windows" type="button"><i></i><span>Windows</span></button>
+          <button class="tile" data-t="lights" type="button"><i></i><span>Lights</span></button>
+          <button class="tile" data-t="hazards" type="button"><i></i><span>Hazards</span></button>
+          <button class="tile" data-t="horn" type="button"><i></i><span>Horn</span></button>
+          <button class="tile" data-t="doorsOff" type="button"><i></i><span>Doors off</span></button>
+          <button class="tile" data-t="lock" type="button"><i></i><span>Lock</span></button>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Roof">
+          <button class="seg-btn" data-roof="on" type="button" role="radio">Roof on</button>
+          <button class="seg-btn" data-roof="panels" type="button" role="radio">Panels off</button>
+          <button class="seg-btn" data-roof="off" type="button" role="radio">Top off</button>
+        </div>
+        <p class="hint">Tap a door on the Jeep to open or close it.</p>
+      </section>
+
+      <section class="panel" data-panel="climate">
+        <header class="panel-head"><a class="back" href="#/" aria-label="Back"></a><h2>Climate</h2></header>
+        <p class="climate-sub" id="climate-sub">Interior 68°F · Exterior 54°F</p>
+        <div class="strip">
+          <button class="strip-btn" data-c="power" type="button"><i></i><span>Off</span></button>
+          <div class="dial">
+            <button class="icon-btn step" id="temp-down" type="button" aria-label="Cooler"></button>
+            <div class="temp"><span id="temp">70</span><sup>°</sup></div>
+            <button class="icon-btn step" id="temp-up" type="button" aria-label="Warmer"></button>
+          </div>
+          <button class="strip-btn" data-c="vent" type="button"><i></i><span>Vent</span></button>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="location">
+        <header class="panel-head"><a class="back" href="#/" aria-label="Back"></a><h2>Location</h2></header>
+        <div class="map" id="map">
+          <div class="mini" id="mini"><canvas id="mini-canvas"></canvas><span class="mini-label" id="mini-label">Home · Parked 2h</span></div>
+        </div>
+        <div class="place"><b id="place">Home</b><span id="place-sub">Golden, CO · Parked 2h</span></div>
+      </section>
+
+      <section class="panel" data-panel="trails">
+        <header class="panel-head"><a class="back" href="#/" aria-label="Back"></a><h2>Trails</h2></header>
+        <nav class="rows plain">
+          <div class="row"><span>Guanella Pass</span><em>42 mi · Oct 11</em></div>
+          <div class="row"><span>Rollins Pass</span><em>31 mi · Sep 27</em></div>
+          <div class="row"><span>Kingston Peak</span><em>18 mi · Sep 6</em></div>
+        </nav>
+      </section>
+
+      <section class="panel" data-panel="about">
+        <header class="panel-head"><a class="back" href="#/" aria-label="Back"></a><h2>About</h2></header>
+        <nav class="rows plain">
+          <div class="row"><span>Wrangler 4xe</span><em>Black, 4-door, lifted, 35" tires</em></div>
+          <div class="row"><span>Odometer</span><em id="odo">14,212 mi</em></div>
+          <div class="row"><span>3D model</span><em>Jeep Wrangler by ddiaz-design on Sketchfab, CC BY-NC-SA 4.0</em></div>
+        </nav>
+      </section>
+    </aside>
+  </div>
+</body>
+</html>
