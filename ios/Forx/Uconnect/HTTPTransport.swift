@@ -9,8 +9,15 @@ nonisolated protocol HTTPTransport: Sendable {
 nonisolated struct URLSessionTransport: HTTPTransport {
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = URLSessionTransport.makeSession()) {
         self.session = session
+    }
+
+    /// Ephemeral, with no URL cache: responses carry the VIN and GPS and are never written to disk.
+    static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
     }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {

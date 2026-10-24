@@ -4,7 +4,8 @@ import Security
 
 /// The Uconnect sign-in and the current session, kept in the Keychain as generic-password
 /// items under service `com.milanpatel.Forx`. Readable after the first unlock so the
-/// background refresh can use them. Nothing here is ever logged.
+/// background refresh can use them, and never leave this device (no backups, no migration).
+/// Nothing here is ever logged.
 nonisolated struct Vault: Sendable, VaultProtocol {
     nonisolated enum VaultError: Error, Equatable {
         case keychain(OSStatus)
@@ -34,7 +35,7 @@ nonisolated struct Vault: Sendable, VaultProtocol {
     /// Best effort: a session that fails to save only means a fresh login next time.
     func saveSession(_ session: Session) {
         guard let data = try? JSONEncoder().encode(session) else { return }
-        try? write(data, .session)
+        _ = try? write(data, .session)
     }
 
     func loadSession() -> Session? {
@@ -65,7 +66,7 @@ nonisolated struct Vault: Sendable, VaultProtocol {
     private func write(_ data: Data, _ account: Account) throws {
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         var status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {

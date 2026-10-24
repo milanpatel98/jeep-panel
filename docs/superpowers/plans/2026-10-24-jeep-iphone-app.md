@@ -53,7 +53,7 @@
   - Implementers write tests first and code against them; reviewers check them by reading.
   - Tests are run on Milan's Mac at the three **Mac checkpoints** (Tasks 6, 10, 13) with `xcodebuild test`, or ⌘U in Xcode.
   - A task is only "verified" after its checkpoint passes.
-- Web tests: run here with `node --test web-tests/`.
+- Web tests: run here with `npm run test:web`.
 - Footer/credits: keep the existing Jeep Panel footer "© 2026 Milan Patel · MIT License".
 
 ## Review Focus
@@ -198,7 +198,7 @@ tools/make_fixtures.py            # runs py-uconnect's pure functions to produce
     - `requestPostsCommand`: the posted message equals `{type:"command", action:"lock"}`.
     - `applyPatchesState`: `apply({pending:{lock:true}})` sets `state.pending.lock === true`.
     - `readyPostedOnLoad`.
-- [ ] **Step 2: Run** `node --test web-tests/`. Expected: FAIL (module not found).
+- [ ] **Step 2: Run** `npm run test:web`. Expected: FAIL (module not found).
 - [ ] **Step 3: Implement `src/native.js` and the `state.js` defaults.**
 - [ ] **Step 4: Route actions in `main.js`.**
   - The quick buttons and tiles for lock, climate, lights, horn and gate call `request()`.
@@ -212,7 +212,7 @@ tools/make_fixtures.py            # runs py-uconnect's pure functions to produce
     - dim stats with class `stale` when `offline`.
   - Null values render as `—`.
   - `style.css`: `.q.pending` gets a 2px rotating ring (transform rotate, 900 ms linear, disabled under `prefers-reduced-motion`); `.hidden{display:none}`.
-- [ ] **Step 5: Run** `node --test web-tests/`. Expected: PASS. Then `npm run build` (site) still succeeds.
+- [ ] **Step 5: Run** `npm run test:web`. Expected: PASS. Then `npm run build` (site) still succeeds.
 - [ ] **Step 6: Add the build script** `"build:app": "vite build -c vite.app.config.js"` (base `./`, outDir `ios/Forx/Web`, emptyOutDir true, publicDir `public`) and run it.
   - Expected: `ios/Forx/Web/index.html` and `model/jeep.glb` exist.
 - [ ] **Step 7: Commit** with message `Jeep Panel talks to the iPhone app`.
@@ -427,7 +427,7 @@ tools/make_fixtures.py            # runs py-uconnect's pure functions to produce
 - Motion: the sign-in sheet uses the system sheet; buttons use the system press feedback; no custom springs needed here.
 
 - [ ] **Step 1: Implement.** `RootView` presents `SignInView` while `store.needsSignIn`.
-- [ ] **Step 2: Rebuild web** with `npm run build:app` and run `node --test web-tests/` (PASS).
+- [ ] **Step 2: Rebuild web** with `npm run build:app` and run `npm run test:web` (PASS).
 - [ ] **Step 3: Commit** with message `Sign-in, settings and alerts`.
 
 ### Task 13: Mac checkpoint C (live)

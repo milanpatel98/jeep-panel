@@ -15,7 +15,7 @@ struct RootView: View {
     let store: JeepStore
     @State private var settingsOpen = false
 
-    private var sheet: Binding<RootSheet?> {
+    private var activeSheet: Binding<RootSheet?> {
         Binding(
             get: { rootSheet(needsSignIn: store.needsSignIn, settingsOpen: settingsOpen) },
             set: { if $0 == nil { settingsOpen = false } })  // swiped away; sign-in can't be
@@ -25,7 +25,7 @@ struct RootView: View {
         PanelWebView(store: store, onSettings: { settingsOpen = true })
             .ignoresSafeArea()
             .background(Color.black.ignoresSafeArea())
-            .sheet(item: sheet) { which in
+            .sheet(item: activeSheet) { which in
                 switch which {
                 case .signIn: SignInView(store: store)
                 case .settings: SettingsView(store: store)

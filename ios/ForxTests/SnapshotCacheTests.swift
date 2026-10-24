@@ -25,6 +25,26 @@ struct SnapshotCacheTests {
         #expect(cache.load() == sample())
     }
 
+    @Test func fileStaysOutOfBackups() throws {
+        let url = tempURL()
+        let cache = SnapshotCache(url: url)
+        try cache.save(sample())
+        #expect(try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        try cache.save(sample())  // atomic write: a new file each time
+        #expect(try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
+    @Test func oldCacheWithoutNewFieldsStillLoads() throws {
+        // A snapshot saved before ignitionOn / gasRangeMiles existed.
+        let url = tempURL()
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(sample())) as? [String: Any])
+        json["ignitionOn"] = nil
+        json["gasRangeMiles"] = nil
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        #expect(SnapshotCache(url: url).load() == sample())
+    }
+
     @Test func loadsLastSnapshotOffline() throws {
         let url = tempURL()
         try SnapshotCache(url: url).save(sample())
