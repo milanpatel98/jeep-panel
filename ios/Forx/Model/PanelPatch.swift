@@ -11,49 +11,78 @@ nonisolated func panelKey(_ cmd: JeepCommand) -> String {
     }
 }
 
+nonisolated enum PanelPatch {
+    /// Data older than this is dimmed (`stale`), like data shown while offline.
+    static let staleAfter: TimeInterval = 10 * 60
+}
+
 /// JeepSnapshot → the patch for `window.jeepNative.apply(patch)` (src/native.js contract).
 /// Only keys the snapshot can fill are sent; anything unknown is JSON null, never a guess.
 /// `name`, `gear`, `trail` and the rest stay the web's own defaults; of `climate` only `on`
 /// is sent (`climateOn`: the store's view after a confirmed Climate On/Off).
 /// `timeZone` is for `battery.fullBy`; tests pass a fixed one.
 /// Every value is JSONSerialization-valid (String, NSNumber, NSNull, Array, Dictionary).
+/// Built one key at a time so the compiler never has to type-check one big literal.
 nonisolated func panelPatch(
     _ s: JeepSnapshot?, pending: Set<JeepCommand>, offline: Bool, message: String?,
     messageId: Int, climateOn: Bool = false, now: Date, timeZone: TimeZone = .current
 ) -> [String: Any] {
-    let hasPlace = s?.latitude?.isFinite == true && s?.longitude?.isFinite == true
-    let pendingKeys = Set(pending.map(panelKey))
-    let panelKeys = ["lock", "climate", "lights", "horn", "gate"]
-    var patch: [String: Any] = [
-        "locked": json(s?.locked),
-        "battery": [
-            "pct": json(s?.evPercent),
-            "miles": json(s?.rangeMiles),
-            "charging": json(s?.charging),
-            "fullBy": fullBy(s, now: now, timeZone: timeZone),
-        ] as [String: Any],
-        "gate": json(s?.tailgateOpen),
-        "fuel": ["miles": NSNull()] as [String: Any],
-        "odometer": json(s?.odometerMiles),
-        "location": [
-            "lat": hasPlace ? json(s?.latitude) : NSNull() as Any,
-            "lng": hasPlace ? json(s?.longitude) : NSNull() as Any,
-        ] as [String: Any],
-        "pending": [String: Bool](uniqueKeysWithValues: panelKeys.map { ($0, pendingKeys.contains($0)) }),
-        "supported": Set((s?.supported ?? []).map(panelKey)).sorted(),
-        "updated": s.map { updatedCopy(since: $0.updatedAt, now: now) } ?? "",
-        "offline": offline,
-        "message": json(message),
-        "messageId": messageId,
-    ]
+    var patch: [String: Any] = [:]
+    patch["locked"] = json(s?.locked)
+
+    var battery: [String: Any] = [:]
+    battery["pct"] = json(s?.evPercent)
+    battery["miles"] = json(s?.rangeMiles)
+    battery["charging"] = json(s?.charging)
+    battery["fullBy"] = fullBy(s, now: now, timeZone: timeZone)
+    patch["battery"] = battery
+
+    var fuel: [String: Any] = [:]
+    fuel["pct"] = json(s?.fuelPercent)
+    fuel["miles"] = json(s?.gasRangeMiles)
+    patch["fuel"] = fuel
+
+    var tires: [String: Any] = [:]
+    for corner in ["FL", "FR", "RL", "RR"] {
+        tires[corner] = json(s?.tiresPsi[corner])
+    }
+    patch["tires"] = tires
+
+    patch["gate"] = json(s?.tailgateOpen)
+    patch["odometer"] = json(s?.odometerMiles)
     patch["climate"] = ["on": climateOn] as [String: Any]
+
+    let hasPlace = s?.latitude?.isFinite == true && s?.longitude?.isFinite == true
+    var location: [String: Any] = [:]
+    location["lat"] = hasPlace ? json(s?.latitude) : NSNull() as Any
+    location["lng"] = hasPlace ? json(s?.longitude) : NSNull() as Any
+    patch["location"] = location
+
+    let pendingKeys = Set(pending.map(panelKey))
+    var pendingFlags: [String: Bool] = [:]
+    for key in ["lock", "climate", "lights", "horn", "gate"] {
+        pendingFlags[key] = pendingKeys.contains(key)
+    }
+    patch["pending"] = pendingFlags
+    let supported: Set<JeepCommand> = s?.supported ?? []
+    patch["supported"] = Set(supported.map(panelKey)).sorted()
+
+    patch["updated"] = s.map { updatedCopy(since: $0.updatedAt, now: now) } ?? ""
+    patch["offline"] = offline
+    let age: TimeInterval? = s.map { now.timeIntervalSince($0.updatedAt) }
+    patch["stale"] = (age ?? 0) > PanelPatch.staleAfter
+    patch["message"] = json(message)
+    patch["messageId"] = messageId
+
     // Doors only when a remote status came back (locked is its proxy); otherwise the web keeps its value.
     if let s, s.locked != nil {
         let open = Set(s.doorsOpen)
-        patch["doors"] = [
-            "FL": open.contains("driver"), "FR": open.contains("passenger"),
-            "BL": open.contains("leftRear"), "BR": open.contains("rightRear"),
-        ] as [String: Bool]
+        var doors: [String: Bool] = [:]
+        doors["FL"] = open.contains("driver")
+        doors["FR"] = open.contains("passenger")
+        doors["BL"] = open.contains("leftRear")
+        doors["BR"] = open.contains("rightRear")
+        patch["doors"] = doors
     }
     return patch
 }

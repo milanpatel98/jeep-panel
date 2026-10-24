@@ -3,6 +3,7 @@ import { createJeep } from './jeep.js'
 import { state, set, subscribe, isNight, attention } from './state.js'
 import { request, isNative, visibleMessage, openSettings } from './native.js'
 import { I } from './icons.js'
+import { dash, VIEW, screenFor, tiresText, isDim, lockAction, chargeSub } from './view.js'
 
 const $ = (s, el = document) => el.querySelector(s)
 const $$ = (s, el = document) => [...el.querySelectorAll(s)]
@@ -11,7 +12,6 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)')
 const wide = matchMedia('(min-width: 900px) and (orientation: landscape), (min-width: 1200px)')
 const glide = () => (reduced.matches ? 1 : 900)
 const NATIVE = isNative()
-const dash = (v, unit = '') => (v == null ? '—' : v + unit)
 const moving = () => state.gear != null && state.gear !== 'Parked'
 const hasPlace = () => state.location?.lat != null && state.location?.lng != null
 
@@ -57,8 +57,7 @@ function syncCar(instant) {
 }
 
 // ---------- screens ----------
-const VIEW = { home: 'hero', controls: 'top', climate: 'top', location: 'hero', trails: 'side', about: 'rear' }
-const screen = () => { const s = location.hash.replace(/^#\/?/, '') || 'home'; return VIEW[s] ? s : 'home' }
+const screen = () => screenFor(location.hash.replace(/^#\/?/, ''), NATIVE)
 function route() {
   const s = screen()
   if (app.dataset.screen === s) return
@@ -73,8 +72,13 @@ function route() {
 let miniView = null
 let leaflet = null
 let marker = null
-async function ensureMap() {
-  if (leaflet) { leaflet.invalidateSize(); return }
+let mapLoading = null   // one load at a time: patches keep arriving while Leaflet loads
+function ensureMap() {
+  if (leaflet) { leaflet.invalidateSize(); return Promise.resolve() }
+  if (!mapLoading) mapLoading = loadMap().finally(() => { mapLoading = null })
+  return mapLoading
+}
+async function loadMap() {
   const L = (await import('leaflet')).default
   await import('leaflet/dist/leaflet.css')
   const { lat, lng } = state.location
@@ -94,7 +98,7 @@ function mini(on) {
       miniView = jeep.miniView($('#mini-canvas'))
       miniView.heading(state.location.heading ?? 0)
       miniView.spin(moving() && !reduced.matches)
-    })
+    }).catch((e) => console.error(e))
   }
   if (!on && miniView) { miniView.destroy(); miniView = null }
 }
@@ -145,7 +149,7 @@ sheet.addEventListener('click', (e) => { if (e.target.closest('a.row') && !wide.
 // ---------- controls ----------
 const toggleDoor = (k) => set({ doors: { [k]: !state.doors[k] } })
 // the Jeep's own commands: Swift sends them when native, local toggles in the browser
-const lockCmd = () => request(state.locked ? 'unlock' : 'lock')
+const lockCmd = () => { const a = lockAction(state.locked); if (a) request(a) }   // nothing until the state is known
 const climateCmd = () => request(state.climate.on ? 'climateOff' : 'climateOn')
 const honk = () => { stage.classList.remove('honk'); void stage.offsetWidth; stage.classList.add('honk'); car.setBrake(true); setTimeout(() => car.setBrake(false), 300); navigator.vibrate?.(40) }
 $$('.q').forEach((b) => b.addEventListener('click', () => {
@@ -188,6 +192,9 @@ setInterval(() => { if (state.night === null) car.setNight(isNight()), render() 
 // inside the iPhone app, controls the Jeep can't do are hidden, not greyed
 if (NATIVE) {
   for (const el of $$('.q[data-q="charge"], .tile[data-t="doors"], .tile[data-t="hood"], .tile[data-t="windows"], .tile[data-t="hazards"], .tile[data-t="doorsOff"], .hint, .strip-btn[data-c="vent"], #temp-down, #temp-up, #limit')) el.classList.add('hidden')
+  // sample-only content: no trail log and no charge limit from the Jeep
+  for (const el of $$('a.row[href="#/trails"], .panel[data-panel="trails"], #charge-title')) el.classList.add('hidden')
+  $('#tires').classList.remove('hidden')
 }
 
 // tap targets and labels that ride on the car
@@ -235,7 +242,7 @@ function render() {
   gearEl.textContent = msg || (att.length ? att.join(' · ') : dash(state.gear))
   gearEl.classList.toggle('attention', !!msg || att.length > 0)
   updatedEl.textContent = state.updated || ''
-  for (const el of [rangeEl, $('#charge'), $('#climate-sub'), $('#row-climate'), $('#odo')]) el.classList.toggle('stale', !!state.offline)
+  for (const el of [rangeEl, $('#charge'), $('#climate-sub'), $('#row-climate'), $('#odo'), $('#row-tires')]) el.classList.toggle('stale', isDim(state))
   nightBtn.innerHTML = isNight() ? I.sun : I.moon
   nightBtn.setAttribute('aria-label', isNight() ? 'Day mode' : 'Night mode')
 
@@ -253,23 +260,25 @@ function render() {
     const el = $(sel)
     el.classList.toggle('pending', !!state.pending?.[k])
     el.classList.toggle('hidden', NATIVE && !sup.includes(k))
+    if (k === 'lock') el.disabled = state.locked == null
   }
 
   // charging
   $('#charge').classList.toggle('charging', b.charging)
   $('#charge-title').textContent = `Charge limit ${dash(b.limit, '%')}`
   $('#charge-state').textContent = b.charging ? 'Charging' : b.pct != null && b.limit != null && b.pct >= b.limit ? 'Charged' : 'Not charging'
-  $('#charge-sub').textContent = b.charging ? `Full by ${dash(b.fullBy)} · ${dash(b.added, ' mi')} added` : `${dash(b.pct, '%')} · ${dash(state.fuel?.miles, ' mi')} on gas`
+  $('#charge-sub').textContent = chargeSub(state, NATIVE)
   const lim = $('#limit')
   if (b.limit != null) { if (+lim.value !== b.limit) lim.value = b.limit; lim.style.setProperty('--fill', ((b.limit - 50) / 50) * 100 + '%') }
 
   // rows
   const rc = $('#row-controls'); rc.textContent = att.filter((s) => !/Unlocked|Lights|Hazards/.test(s)).join(' · ') || (state.locked == null ? '—' : state.locked ? 'Locked' : 'Unlocked'); rc.classList.toggle('attention', /open/.test(rc.textContent))
-  $('#row-climate').textContent = (c.on ? `On · ${dash(c.target?.toFixed(0), '°')} · ` : '') + `Interior ${dash(c.interior, '°')}`
+  $('#row-climate').textContent = (c.on ? (c.target != null ? `On · ${c.target.toFixed(0)}° · ` : 'On · ') : '') + `Interior ${dash(c.interior, '°')}`
   const loc = state.location || {}, tr = state.trail || {}
   $('#row-location').textContent = dash(loc.label)
   $('#row-trails').textContent = tr.name == null ? '—' : `Last: ${tr.name}, ${dash(tr.miles, ' mi')}`
   $('#odo').textContent = dash(state.odometer?.toLocaleString(), ' mi')
+  $('#row-tires').textContent = tiresText(state.tires)
 
   // tiles
   const allDoors = Object.values(state.doors).every(Boolean), anyDoor = Object.values(state.doors).some(Boolean)

@@ -39,7 +39,8 @@ const native = {
   locked: null,
   lights: false,
   battery: { pct: null, miles: null, limit: null, charging: false, fullBy: null, added: null },
-  fuel: { miles: null },
+  fuel: { pct: null, miles: null },
+  tires: { FL: null, FR: null, RL: null, RR: null },   // psi
   climate: { on: false, target: null, interior: null, exterior: null, vent: false },
   odometer: null,
   gear: null,
@@ -55,6 +56,7 @@ export const state = {
   supported: NATIVE ? [] : [...COMMANDS],
   updated: '',
   offline: false,
+  stale: false,
   message: null,
   messageId: 0,
 }

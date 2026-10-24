@@ -8,13 +8,14 @@ struct RefresherTests {
     /// A snapshot that raises nothing on its own.
     private func snap(
         locked: Bool? = true, tires: [String: Int] = ["FL": 35, "FR": 35, "RL": 35, "RR": 35],
-        range: Int? = 186, pluggedIn: Bool? = false, charging: Bool? = false, at: Date? = nil
+        range: Int? = 186, pluggedIn: Bool? = false, charging: Bool? = false, at: Date? = nil,
+        ignition: Bool? = nil
     ) -> JeepSnapshot {
         JeepSnapshot(
             nickname: nil, locked: locked, doorsOpen: [], tailgateOpen: nil,
             rangeMiles: range, fuelPercent: nil, evPercent: nil, pluggedIn: pluggedIn,
             charging: charging, chargeMinutesLeft: nil, tiresPsi: tires, odometerMiles: nil,
-            latitude: nil, longitude: nil, supported: [], updatedAt: at ?? now)
+            latitude: nil, longitude: nil, supported: [], updatedAt: at ?? now, ignitionOn: ignition)
     }
 
     private func freshDefaults() -> UserDefaults {
@@ -58,6 +59,34 @@ struct RefresherTests {
         #expect(nextUnlockedSince(nil, locked: true, now: t1) == nil)
         #expect(nextUnlockedSince(t0, locked: nil, now: t1) == t0)    // unknown: keep
         #expect(nextUnlockedSince(nil, locked: nil, now: t1) == nil)
+    }
+
+    @Test func unlockedSinceOnlyWhileParked() {
+        let t0 = now, t1 = now.addingTimeInterval(300)
+        // ignition on: driving, not parked; starts nothing and drops what was there
+        #expect(nextUnlockedSince(nil, locked: false, ignitionOn: true, now: t0) == nil)
+        #expect(nextUnlockedSince(t0, locked: false, ignitionOn: true, now: t1) == nil)
+        #expect(nextUnlockedSince(t0, locked: nil, ignitionOn: true, now: t1) == nil)
+        // ignition off, or unknown, counts as parked
+        #expect(nextUnlockedSince(nil, locked: false, ignitionOn: false, now: t0) == t0)
+        #expect(nextUnlockedSince(t0, locked: false, ignitionOn: false, now: t1) == t0)
+        #expect(nextUnlockedSince(t0, locked: false, ignitionOn: nil, now: t1) == t0)
+    }
+
+    @Test func drivingUnlockedNeverNotifies() {
+        let d = freshDefaults()
+        let tracker = AlertTracker(defaults: d)
+        let driving = snap(locked: false, ignition: true)
+        #expect(tracker.update(previous: nil, current: driving, now: now) == [])
+        #expect(tracker.update(previous: driving, current: driving, now: now.addingTimeInterval(1200)) == [])
+        #expect(d.object(forKey: "unlocked.since") == nil)
+        // parked unlocked: the 10 minutes start at the first parked reading
+        let parked = snap(locked: false, ignition: false)
+        let stop = now.addingTimeInterval(1800)
+        #expect(tracker.update(previous: driving, current: parked, now: stop) == [])
+        #expect(d.object(forKey: "unlocked.since") as? Date == stop)
+        #expect(tracker.update(previous: parked, current: parked, now: stop.addingTimeInterval(599)) == [])
+        #expect(tracker.update(previous: parked, current: parked, now: stop.addingTimeInterval(600)) == [.leftUnlocked])
     }
 
     // MARK: Copy

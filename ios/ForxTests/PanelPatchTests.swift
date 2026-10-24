@@ -9,14 +9,15 @@ struct PanelPatchTests {
         locked: Bool? = true, range: Int? = 186, ev: Int? = 78, charging: Bool? = false,
         odometer: Int? = 7671, lat: Double? = 0.0, lng: Double? = 0.0,
         supported: Set<JeepCommand> = [], age: TimeInterval = 0,
-        doorsOpen: [String] = [], tailgate: Bool? = nil, chargeMinutes: Int? = nil
+        doorsOpen: [String] = [], tailgate: Bool? = nil, chargeMinutes: Int? = nil,
+        fuel: Int? = nil, gasRange: Int? = nil, tires: [String: Int] = [:]
     ) -> JeepSnapshot {
         JeepSnapshot(
             nickname: nil, locked: locked, doorsOpen: doorsOpen, tailgateOpen: tailgate,
-            rangeMiles: range, fuelPercent: nil, evPercent: ev, pluggedIn: nil, charging: charging,
-            chargeMinutesLeft: chargeMinutes, tiresPsi: [:], odometerMiles: odometer,
+            rangeMiles: range, fuelPercent: fuel, evPercent: ev, pluggedIn: nil, charging: charging,
+            chargeMinutesLeft: chargeMinutes, tiresPsi: tires, odometerMiles: odometer,
             latitude: lat, longitude: lng, supported: supported,
-            updatedAt: now.addingTimeInterval(-age))
+            updatedAt: now.addingTimeInterval(-age), gasRangeMiles: gasRange)
     }
 
     private func patch(
@@ -54,6 +55,11 @@ struct PanelPatchTests {
         #expect(battery?["miles"] is NSNull)
         #expect(battery?["charging"] is NSNull)
         #expect((p["fuel"] as? [String: Any])?["miles"] is NSNull)
+        #expect((p["fuel"] as? [String: Any])?["pct"] is NSNull)
+        let tires = p["tires"] as? [String: Any]
+        #expect(tires?.count == 4)
+        #expect(tires?["FL"] is NSNull && tires?["RR"] is NSNull)
+        #expect(p["stale"] as? Bool == false)
         let location = p["location"] as? [String: Any]
         #expect(location?["lat"] is NSNull)
         #expect(location?["lng"] is NSNull)
@@ -128,6 +134,35 @@ struct PanelPatchTests {
         let idle = patch(snap(charging: false, chargeMinutes: 150))["battery"] as? [String: Any]
         #expect(idle?["fullBy"] is NSNull)
         #expect((patch(nil)["battery"] as? [String: Any])?["fullBy"] is NSNull)
+    }
+
+    @Test func fuelPercentAndGasRange() {
+        let fuel = patch(snap(fuel: 60, gasRange: 162))["fuel"] as? [String: Any]
+        #expect(fuel?["pct"] as? Int == 60)
+        #expect(fuel?["miles"] as? Int == 162)
+        let noGas = patch(snap(fuel: 60))["fuel"] as? [String: Any]
+        #expect(noGas?["pct"] as? Int == 60)
+        #expect(noGas?["miles"] is NSNull)
+    }
+
+    @Test func tiresAllFourCornersInPsi() {
+        let tires = patch(snap(tires: ["FL": 35, "FR": 35, "RL": 34]))["tires"] as? [String: Any]
+        #expect(tires?["FL"] as? Int == 35)
+        #expect(tires?["FR"] as? Int == 35)
+        #expect(tires?["RL"] as? Int == 34)
+        #expect(tires?["RR"] is NSNull)  // missing: the panel shows "—"
+        #expect(tires?.count == 4)
+    }
+
+    @Test func staleAfterTenMinutes() {
+        #expect(patch(snap(age: 0))["stale"] as? Bool == false)
+        #expect(patch(snap(age: 600))["stale"] as? Bool == false)
+        #expect(patch(snap(age: 601))["stale"] as? Bool == true)
+        #expect(patch(snap(age: 7200))["stale"] as? Bool == true)
+        #expect(patch(nil)["stale"] as? Bool == false)
+        // offline is still sent on its own
+        #expect(patch(snap(age: 0), offline: true)["stale"] as? Bool == false)
+        #expect(patch(snap(age: 0), offline: true)["offline"] as? Bool == true)
     }
 
     @Test func climateOnlySendsOn() {

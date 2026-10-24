@@ -13,10 +13,11 @@ nonisolated func newAlerts(
     active.subtracting(previouslyActive).intersection(enabled)
 }
 
-/// When the Jeep was first seen unlocked: kept while it stays unlocked, cleared once it's
-/// locked, kept as is when the lock state is unknown. The snapshot has no gear, so every
-/// unlocked refresh counts as parked.
-nonisolated func nextUnlockedSince(_ since: Date?, locked: Bool?, now: Date) -> Date? {
+/// When the Jeep was first seen unlocked while parked: kept while it stays unlocked and
+/// parked, cleared once it's locked or the ignition is on, kept as is when the lock state is
+/// unknown. Parked means the ignition is off or unknown.
+nonisolated func nextUnlockedSince(_ since: Date?, locked: Bool?, ignitionOn: Bool? = nil, now: Date) -> Date? {
+    if ignitionOn == true { return nil }  // driving or running: not left unlocked
     switch locked {
     case false?: since ?? now
     case true?: nil
@@ -99,7 +100,7 @@ nonisolated struct AlertTracker {
     /// Updates `unlocked.since` for this reading, then evaluates the rules.
     private func activeAlerts(previous: JeepSnapshot?, current: JeepSnapshot, now: Date) -> Set<Alert> {
         let stored = defaults.object(forKey: Self.unlockedSinceKey) as? Date
-        let since = nextUnlockedSince(stored, locked: current.locked, now: now)
+        let since = nextUnlockedSince(stored, locked: current.locked, ignitionOn: current.ignitionOn, now: now)
         if let since {
             defaults.set(since, forKey: Self.unlockedSinceKey)
         } else {

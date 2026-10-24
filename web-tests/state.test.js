@@ -17,7 +17,9 @@ test('nativeDefaultsAreOff', async () => {
     assert.equal(state.name, 'Milan')
     assert.equal(state.battery.pct, null)
     assert.equal(state.battery.miles, null)
-    assert.equal(state.fuel.miles, null)
+    assert.deepEqual(state.fuel, { pct: null, miles: null })
+    assert.deepEqual(state.tires, { FL: null, FR: null, RL: null, RR: null })
+    assert.equal(state.stale, false)
     assert.equal(state.odometer, null)
     assert.deepEqual(state.supported, [])
     assert.deepEqual(state.pending, { lock: false, climate: false, lights: false, horn: false, gate: false })
@@ -51,6 +53,8 @@ test('browserDefaultsUnchanged', async () => {
   assert.equal(state.gear, 'Parked')
   assert.deepEqual(state.location, { label: 'Home', detail: 'Golden, CO', since: '2h', lat: 39.7555, lng: -105.2211, heading: 35 })
   assert.equal(state.trail.name, 'Guanella Pass')
+  assert.equal(state.tires, undefined)   // no tires row in the browser
+  assert.equal(state.stale, false)
 })
 
 test('attentionDoesNotCallUnknownLockUnlocked', async () => {

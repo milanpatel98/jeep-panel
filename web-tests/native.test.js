@@ -54,6 +54,18 @@ test('applyPatchesState', () => {
   assert.equal(state.updated, 'Updated 3 min ago')
 })
 
+test('applyMergesFuelTiresClimateAndStale', () => {
+  window.jeepNative.apply({ fuel: { pct: 60, miles: null }, tires: { FL: 35, FR: 35, RL: 34, RR: null }, climate: { on: true }, stale: true })
+  assert.deepEqual(state.fuel, { pct: 60, miles: null })
+  assert.deepEqual(state.tires, { FL: 35, FR: 35, RL: 34, RR: null })
+  assert.equal(state.climate.on, true)
+  assert.equal(state.climate.vent, false)   // only `on` came from Swift; the rest stays
+  assert.equal(state.stale, true)
+  window.jeepNative.apply({ climate: { on: false }, stale: false })
+  assert.equal(state.climate.on, false)
+  assert.equal(state.stale, false)
+})
+
 test('tapWhilePendingPostsNothing', () => {
   window.jeepNative.apply({ pending: { lock: true }, supported: ['lock'] })
   posted.length = 0

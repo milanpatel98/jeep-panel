@@ -25,6 +25,15 @@ struct AlertRulesTests {
         #expect(alerts(previous: nil, current: snap(locked: true), unlockedSince: now.addingTimeInterval(-3600), now: now) == [])
     }
 
+    @Test func leftUnlockedOnlyWhenParked() {
+        var driving = snap(locked: false)
+        driving.ignitionOn = true
+        #expect(alerts(previous: nil, current: driving, unlockedSince: now.addingTimeInterval(-3600), now: now) == [])
+        var parked = snap(locked: false)
+        parked.ignitionOn = false
+        #expect(alerts(previous: nil, current: parked, unlockedSince: now.addingTimeInterval(-600), now: now) == [.leftUnlocked])
+    }
+
     @Test func lowTire() {
         #expect(alerts(previous: nil, current: snap(tires: ["FL": 32, "RR": 40]), unlockedSince: nil, now: now) == [])
         #expect(alerts(previous: nil, current: snap(tires: ["FL": 35, "RR": 31]), unlockedSince: nil, now: now) == [.lowTire])

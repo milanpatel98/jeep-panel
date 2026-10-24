@@ -10,15 +10,15 @@ nonisolated enum Alert: String, CaseIterable, Sendable {
 }
 
 /// Which alerts apply to `current`, in `Alert.allCases` order.
-/// - `unlockedSince`: when the caller first saw the Jeep unlocked while parked (the snapshot
-///   has no gear, so "parked" is the caller's call); nil if it isn't.
+/// - `unlockedSince`: when the caller first saw the Jeep unlocked while parked (ignition off
+///   or unknown); nil if it isn't.
 /// - The rules are levels, not edges (except `chargingDone`): the caller decides how often
 ///   to repeat a notification.
 nonisolated func alerts(
     previous: JeepSnapshot?, current: JeepSnapshot, unlockedSince: Date?, now: Date
 ) -> [Alert] {
     var out: [Alert] = []
-    if current.locked == false, let since = unlockedSince,
+    if current.locked == false, current.ignitionOn != true, let since = unlockedSince,
        now.timeIntervalSince(since) >= Alert.unlockedSeconds {
         out.append(.leftUnlocked)
     }

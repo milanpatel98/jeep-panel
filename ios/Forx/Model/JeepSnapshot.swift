@@ -25,6 +25,11 @@ nonisolated struct JeepSnapshot: Codable, Sendable, Equatable {
     var supported: Set<JeepCommand>
     var updatedAt: Date
 
+    /// Ignition on (running or driving); nil when unknown. "Parked" means not on.
+    var ignitionOn: Bool? = nil
+    /// Gas-only range (`evInfo.battery.gasRange`), mi.
+    var gasRangeMiles: Int? = nil
+
     enum ParseError: Error { case notAnObject }
 
     static let milesPerKm = 0.621371
@@ -58,6 +63,12 @@ nonisolated struct JeepSnapshot: Codable, Sendable, Equatable {
 
         let charging = equals(p, "CHARGING", batt + ["chargingStatus"])
 
+        // Gas range takes the distance_to_empty unit (L370-378).
+        let dte = number(p, batt + ["distanceToEmpty", "value"]) != nil
+            ? batt + ["distanceToEmpty"] : fuel + ["distanceToEmpty"]
+        let dteUnit = str(p, dte + ["unit"])
+        let gasRangeMiles: Int? = number(p, batt + ["gasRange"]).map { Int(miles($0, unit: dteUnit).rounded()) }
+
         var tires: [String: Int] = [:]
         if let list = value(p, ["vehicleInfo", "tyrePressure"]) as? [Any] {  // L409-423
             var byType: [String: [String: Any]] = [:]
@@ -83,25 +94,50 @@ nonisolated struct JeepSnapshot: Codable, Sendable, Equatable {
         let locked: Bool? = doorLocks.contains(false) ? false
             : (!doorLocks.isEmpty && !doorLocks.contains { $0 == nil } ? true : nil)
 
+        // Ignition: evInfo.ignitionStatus (L386), replaced by engine.status when the remote
+        // status has an engine entry (L449-450).
+        let ignitionOn: Bool?
+        if let r, r["engine"] != nil {
+            ignitionOn = equals(r, "ON", ["engine", "status"])
+        } else {
+            ignitionOn = equals(p, "ON", ["evInfo", "ignitionStatus"])
+        }
+
+        // Each value on its own line, so the initializer below stays cheap to type-check.
+        let tailgateOpen: Bool? = r.flatMap { equals($0, "OPEN", ["liftGate", "status"]) }
+        let rangeMiles: Int? = rangeKm.map { Int(miles($0.0, unit: $0.1).rounded()) }
+        let fuelPercent: Int? = number(p, fuel + ["fuelAmountLevel"]).map { Int($0.rounded()) }  // L383
+        let evPercent: Int? = number(p, batt + ["stateOfCharge"]).map { Int($0.rounded()) }  // L360
+        let pluggedIn: Bool? = bool(p, batt + ["plugInStatus"])  // L359
+        let chargeMinutesLeft: Int? = charging == true
+            ? chargeMinutes(p, level: str(p, batt + ["chargingLevel"])) : nil
+        // L406-407
+        let odometerUnit = str(p, ["vehicleInfo", "odometer", "odometer", "unit"])
+        let odometerValue: Double? = number(p, ["vehicleInfo", "odometer", "odometer", "value"])
+        let odometerMiles: Int? = odometerValue.map { Int(miles($0, unit: odometerUnit).rounded()) }
+        let latitude: Double? = loc.flatMap { number($0, ["latitude"]) }  // parse_location L467
+        let longitude: Double? = loc.flatMap { number($0, ["longitude"]) }
+        let supported: Set<JeepCommand> = supportedCommands(services: services)
+
         return JeepSnapshot(
             nickname: nil,
             locked: locked,
             doorsOpen: doorsOpen,
-            tailgateOpen: r.flatMap { equals($0, "OPEN", ["liftGate", "status"]) },
-            rangeMiles: rangeKm.map { Int(miles($0.0, unit: $0.1).rounded()) },
-            fuelPercent: number(p, fuel + ["fuelAmountLevel"]).map { Int($0.rounded()) },  // L383
-            evPercent: number(p, batt + ["stateOfCharge"]).map { Int($0.rounded()) },  // L360
-            pluggedIn: bool(p, batt + ["plugInStatus"]),  // L359
+            tailgateOpen: tailgateOpen,
+            rangeMiles: rangeMiles,
+            fuelPercent: fuelPercent,
+            evPercent: evPercent,
+            pluggedIn: pluggedIn,
             charging: charging,  // L354
-            chargeMinutesLeft: charging == true ? chargeMinutes(p, level: str(p, batt + ["chargingLevel"])) : nil,
+            chargeMinutesLeft: chargeMinutesLeft,
             tiresPsi: tires,
-            odometerMiles: number(p, ["vehicleInfo", "odometer", "odometer", "value"]).map {  // L406-407
-                Int(miles($0, unit: str(p, ["vehicleInfo", "odometer", "odometer", "unit"])).rounded())
-            },
-            latitude: loc.flatMap { number($0, ["latitude"]) },  // parse_location L467
-            longitude: loc.flatMap { number($0, ["longitude"]) },
-            supported: supportedCommands(services: services),
-            updatedAt: now
+            odometerMiles: odometerMiles,
+            latitude: latitude,
+            longitude: longitude,
+            supported: supported,
+            updatedAt: now,
+            ignitionOn: ignitionOn,
+            gasRangeMiles: gasRangeMiles
         )
     }
 

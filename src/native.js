@@ -11,6 +11,10 @@
 //     supported: string[] of "lock"|"climate"|"lights"|"horn"|"gate"  others are hidden
 //     updated:   string, e.g. "Updated 3 min ago"
 //     offline:   bool  dims the stats
+//     stale:     bool  the data is older than 10 min: dims the stats too
+//     fuel:      {pct, miles}  fuel level % and gas-only range (null when unknown)
+//     tires:     {FL, FR, RL, RR}  psi, null when unknown (shown as "—")
+//     climate:   {on}  only `on`; on after a confirmed start, for 15 min or until a confirmed Off
 //     message:   string|null  shown in the status line for 4 s ...
 //     messageId: number  ... each time messageId changes (same text with a new id shows again;
 //                a patch that repeats the old id does not restart the 4 s)

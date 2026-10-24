@@ -30,6 +30,37 @@ struct SnapshotTests {
         #expect(s.latitude == nil && s.longitude == nil)
         #expect(s.supported == [.lock, .unlock, .horn, .climateOn, .climateOff])
         #expect(s.updatedAt == now)
+        // gasRange 260 km x 0.621371 = 161.56 -> 162
+        #expect(s.gasRangeMiles == 162)
+        #expect(s.ignitionOn == false)
+    }
+
+    @Test func ignitionFromInfoThenRemoteStatus() throws {
+        func ignition(info: String, status: String?) throws -> Bool? {
+            try JeepSnapshot.parse(
+                info: Data(info.utf8), status: status.map { Data($0.utf8) }, location: nil,
+                services: [], now: now
+            ).ignitionOn
+        }
+        let off = #"{"evInfo": {"ignitionStatus": "OFF"}}"#
+        let on = #"{"evInfo": {"ignitionStatus": "ON"}}"#
+        #expect(try ignition(info: off, status: nil) == false)
+        #expect(try ignition(info: on, status: nil) == true)
+        #expect(try ignition(info: "{}", status: nil) == nil)
+        // models.py L449-450: an engine entry in the remote status wins
+        #expect(try ignition(info: off, status: #"{"engine": {"status": "ON"}}"#) == true)
+        #expect(try ignition(info: on, status: #"{"engine": {"status": "OFF"}}"#) == false)
+        #expect(try ignition(info: on, status: #"{"engine": {}}"#) == nil)
+        #expect(try ignition(info: on, status: #"{"doors": {}}"#) == true)
+    }
+
+    @Test func gasRangeTakesDistanceToEmptyUnit() throws {
+        let mi = #"{"evInfo": {"battery": {"gasRange": "200", "distanceToEmpty": {"value": "20", "unit": "mi"}}}}"#
+        #expect(try JeepSnapshot.parse(info: Data(mi.utf8), status: nil, location: nil, services: [], now: now)
+            .gasRangeMiles == 200)
+        let none = #"{"evInfo": {"battery": {}}}"#
+        #expect(try JeepSnapshot.parse(info: Data(none.utf8), status: nil, location: nil, services: [], now: now)
+            .gasRangeMiles == nil)
     }
 
     @Test func nullFieldsStayNil() throws {
