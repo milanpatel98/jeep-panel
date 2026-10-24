@@ -158,6 +158,11 @@ svg { display: block; width: 100%; height: 100%; }
 #app[data-screen="location"] { --peek: 360px; }
 #app[data-screen="trails"], #app[data-screen="about"] { --peek: 300px; }
 #app[data-screen="home"] .panel { overflow: hidden; }
+/* The sheet moves only by its own pointer drag, never by a browser pan (in the iPhone app the page itself
+   pans for pull-to-refresh, which would steal the drag). An open panel that scrolls pans vertically and
+   never hands the scroll on to the page. */
+.sheet { touch-action: none; }
+#app:not([data-screen="home"]) .sheet.open .panel { touch-action: pan-y; overscroll-behavior: contain; }
 
 .panel-head { display: flex; align-items: center; gap: 4px; height: 44px; margin: 0 0 8px -10px; }
 .panel-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
@@ -258,7 +263,7 @@ a.row:hover::after { right: 18px; }
     box-shadow: none; bottom: auto; max-height: calc(100% - var(--top-inset) - var(--bottom-inset) - var(--gap) * 2);
   }
   .grip { display: none; }
-  .panel { padding: 16px 20px 20px; overflow: hidden auto !important; }
+  .panel { padding: 16px 20px 20px; overflow: hidden auto !important; touch-action: pan-y; overscroll-behavior: contain; }
   .panel-head { margin-top: -4px; }
   .charge { margin-top: 0; }
   #app[data-screen="controls"] .quick, #app[data-screen="climate"] .quick, #app[data-screen="controls"] .top, #app[data-screen="climate"] .top { display: flex; }

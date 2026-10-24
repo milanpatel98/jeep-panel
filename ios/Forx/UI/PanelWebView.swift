@@ -237,9 +237,13 @@ struct PanelWebView: UIViewRepresentable {
         var onSettings: (() -> Void)?
         weak var webView: WKWebView?
 
+        /// Re-push this often while the page is ready, so "Updated N min ago" stays true between changes.
+        static let tickInterval: Duration = .seconds(30)
+
         /// The page posted `ready` (its `window.jeepNative` exists). Reset on every new load.
         private var ready = false
         private var stopped = false
+        private var ticker: Task<Void, Never>? = nil
 
         init(store: JeepStore, onSettings: (() -> Void)?) {
             self.store = store
@@ -248,7 +252,25 @@ struct PanelWebView: UIViewRepresentable {
 
         func stop() {
             stopped = true
+            notReady()
+        }
+
+        private func notReady() {
             ready = false
+            ticker?.cancel()
+            ticker = nil
+        }
+
+        /// Pushes the current patch every 30 s until the page reloads or the view goes away.
+        private func startTicker() {
+            ticker?.cancel()
+            ticker = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: Coordinator.tickInterval)
+                    guard !Task.isCancelled, let self else { return }
+                    self.push(self.store.patch)
+                }
+            }
         }
 
         // MARK: Store → page
@@ -285,6 +307,7 @@ struct PanelWebView: UIViewRepresentable {
             case .ready:
                 ready = true
                 push(store.patch)
+                startTicker()
             case .command(let cmd):
                 let store = self.store
                 Task { await store.perform(cmd) }
@@ -304,7 +327,7 @@ struct PanelWebView: UIViewRepresentable {
         // MARK: Navigation
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            ready = false  // a (re)load: wait for the new page's `ready`
+            notReady()  // a (re)load: wait for the new page's `ready`
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -312,7 +335,7 @@ struct PanelWebView: UIViewRepresentable {
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            ready = false
+            notReady()
             webView.isOpaque = false
             webView.load(URLRequest(url: WebFiles.startURL))
         }
