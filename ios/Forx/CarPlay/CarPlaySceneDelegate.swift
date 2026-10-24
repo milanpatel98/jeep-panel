@@ -10,6 +10,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private var interfaceController: CPInterfaceController?
     private var window: CPWindow?
     private var host: UIHostingController<DashboardView>?
+    private var templates: CarPlayTemplates?
     private var connected = false
     private var ticker: Task<Void, Never>? = nil
     private var motionObserver: (any NSObjectProtocol)? = nil
@@ -21,6 +22,13 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     ) {
         self.interfaceController = interfaceController
         self.window = window
+
+        // Built once per connect: sets the map template as root; updates go in place.
+        let scene = templateApplicationScene
+        templates = CarPlayTemplates(
+            interface: interfaceController,
+            open: { [weak scene] url in scene?.open(url, options: nil, completionHandler: nil) },
+            perform: { cmd in Task { await AppModel.store.perform(cmd, fromCarPlay: true) } })
 
         let host = UIHostingController(rootView: Self.dashboard())
         host.view.backgroundColor = .black
@@ -36,8 +44,6 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             let delegate = self
             Task { @MainActor in delegate?.render() }
         }
-
-        interfaceController.setRootTemplate(CPMapTemplate(), animated: false, completion: nil)
     }
 
     func templateApplicationScene(
@@ -51,6 +57,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         if let motionObserver { NotificationCenter.default.removeObserver(motionObserver) }
         motionObserver = nil
         host = nil
+        templates = nil
         self.interfaceController = nil
         self.window = nil
     }
@@ -62,7 +69,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private func observe() {
         guard connected else { return }
         let view = withObservationTracking {
-            Self.dashboard()
+            Self.dashboard(templates: templates)
         } onChange: { [weak self] in
             let delegate = self
             Task { @MainActor in delegate?.observe() }
@@ -73,7 +80,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     /// A rebuild outside observation (ticker, Reduce Motion); the observation stays armed.
     private func render() {
         guard connected else { return }
-        host?.rootView = Self.dashboard()
+        host?.rootView = Self.dashboard(templates: templates)
     }
 
     private func startTicker() {
@@ -87,8 +94,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
     }
 
-    /// The dashboard for the store's state now.
-    private static func dashboard(now: Date = Date()) -> DashboardView {
+    /// The dashboard for the store's state now; also updates the CarPlay buttons in place.
+    private static func dashboard(templates: CarPlayTemplates? = nil, now: Date = Date()) -> DashboardView {
         let store = AppModel.store
         let roof = AppModel.roof
         let snapshot = store.snapshot
@@ -96,6 +103,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let model = CarPlayModel.make(
             snapshot: snapshot, pending: store.pending, climateOn: climateOn, message: store.message,
             signedIn: !store.needsSignIn, roof: roof, now: now)
+        templates?.update(model)
         let state = JeepEmbedState.make(
             snapshot: snapshot, roof: roof, reducedMotion: UIAccessibility.isReduceMotionEnabled)
         var location: CLLocationCoordinate2D? = nil
