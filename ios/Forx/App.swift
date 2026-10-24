@@ -10,7 +10,7 @@ struct ForxApp: App {
     @State private var foregroundRefresh: Task<Void, Never>? = nil
 
     init() {
-        let store = ForxApp.makeStore()
+        let store = AppModel.store
         _store = State(initialValue: store)
         // Before the app finishes launching, as BGTaskScheduler requires.
         Refresher.register(store: store)
@@ -48,17 +48,5 @@ struct ForxApp: App {
     private func stopForegroundRefresh() {
         foregroundRefresh?.cancel()
         foregroundRefresh = nil
-    }
-
-    private static func makeStore() -> JeepStore {
-        let transport = URLSessionTransport()
-        let folder = URL.applicationSupportDirectory.appendingPathComponent("forx", isDirectory: true)
-        return JeepStore(
-            makeAPI: { UconnectAPI(transport: transport, session: $0) },
-            auth: UconnectAuth(transport: transport),
-            vault: Vault(),
-            faceID: LAFaceIDGate(),
-            cache: SnapshotCache(url: folder.appendingPathComponent("snapshot.json")),
-            now: { Date() })
     }
 }

@@ -30,9 +30,17 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: [com.milanpatel.Forx.refresh]
         NSFaceIDUsageDescription: "Face ID confirms it's you before unlocking the Jeep."
         UIUserInterfaceStyle: Dark
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneConfigurationName: CarPlay
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.milanpatel.Forx
+        CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]: Forx/ForxCarPlay.entitlements
   ForxTests:
     type: bundle.unit-test
     platform: iOS
