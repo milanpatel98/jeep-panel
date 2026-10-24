@@ -23,12 +23,10 @@ Done means: Milan opens Xcode, presses Run, signs in once, sees his real Jeep, a
 
 ## 3. Screens
 
-### iPhone (Tesla-app style)
-- Top: the 3D black Jeep on a subtle mirror floor. It starts in top view, then turns to the 3/4 view. You can drag to rotate it; after 2.5 s of no touch it glides back.
-- Under the Jeep: one status line ("Locked · 72 mi · Updated 3 min ago").
-- Controls row: Lock, Climate, Lights, More. All off by default.
-- Scroll down: Tires (4 × psi), Charging/EV, Roof view strip (on / panels off / off), Horn, Tailgate, Trip info.
-- Settings: sign in/out, units, Apps tray list, alerts on/off.
+### iPhone: the existing Jeep Panel
+- The iPhone screens are the Jeep Panel app Milan already has (this repo, live on GitHub Pages): same layout, same dark grey theme, same 3D Jeep and controls.
+- What changes is the data. The placeholder values become real Uconnect data, and the buttons send real commands under the rules in §4.
+- Added to it: Settings (sign in/out, units, Apps tray list, alerts on/off) and the Face ID step for Unlock.
 
 ### CarPlay (approved mockup `jeep-carplay-v3.png`)
 - Left 25%, the Jeep panel:
@@ -87,7 +85,7 @@ Units: mi, psi, °F.
 | Vault | Keychain items (sign-in, PIN, tokens), `AfterFirstUnlock` so CarPlay works with the phone locked; Face ID gate for Unlock |
 | JeepScene | The existing three.js Jeep (embed build) inside a WKWebView, served from the app bundle through a custom URL scheme; Swift → JS calls: view, roof, lights, door, gate |
 | GlobeView | MapKit satellite globe |
-| PhoneUI | SwiftUI screens from §3 |
+| PhoneUI | The Jeep Panel screens (the existing web app, bundled) plus native Settings and Face ID |
 | CarPlayUI | Scene delegate, CPMapTemplate + window with the 25/75 picture, Apple buttons on top, More list, Apps tray |
 | Alerts | Background refresh + local notifications (CarPlay-allowed) |
 
