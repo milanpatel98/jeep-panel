@@ -1,7 +1,7 @@
 import './style.css'
 import { createJeep } from './jeep.js'
 import { state, set, subscribe, isNight, attention } from './state.js'
-import { request, isNative, visibleMessage } from './native.js'
+import { request, isNative, visibleMessage, openSettings } from './native.js'
 import { I } from './icons.js'
 
 const $ = (s, el = document) => el.querySelector(s)
@@ -176,6 +176,13 @@ $('#temp-down').addEventListener('click', () => set({ climate: { target: Math.ma
 $('#temp-up').addEventListener('click', () => set({ climate: { target: Math.min(82, state.climate.target + 1) } }))
 $('#limit').addEventListener('input', (e) => set({ battery: { limit: +e.target.value } }))
 $('#night').addEventListener('click', () => set({ night: !isNight() }))
+// Settings (sign out, alerts) live in the iPhone app; the browser has no settings button
+if (NATIVE) {
+  const s = $('#settings')
+  s.innerHTML = I.gear
+  s.classList.remove('hidden')
+  s.addEventListener('click', openSettings)
+}
 setInterval(() => { if (state.night === null) car.setNight(isNight()), render() }, 60_000)
 
 // inside the iPhone app, controls the Jeep can't do are hidden, not greyed

@@ -21,5 +21,6 @@ import wind from '@phosphor-icons/core/assets/fill/wind-fill.svg?raw'
 import navigation from '@phosphor-icons/core/assets/fill/navigation-arrow-fill.svg?raw'
 import x from '@phosphor-icons/core/assets/bold/x-bold.svg?raw'
 import steering from '@phosphor-icons/core/assets/fill/steering-wheel-fill.svg?raw'
+import gear from '@phosphor-icons/core/assets/fill/gear-six-fill.svg?raw'
 
-export const I = { lock, lockOpen, fan, lightning, headlights, door, doorOpen, jeep, carProfile, megaphone, warning, snowflake, power, moon, sun, caretDown, caretLeft, caretRight, wind, navigation, x, steering }
+export const I = { lock, lockOpen, fan, lightning, headlights, door, doorOpen, jeep, carProfile, megaphone, warning, snowflake, power, moon, sun, caretDown, caretLeft, caretRight, wind, navigation, x, steering, gear }

@@ -477,4 +477,32 @@ struct JeepStoreTests {
         #expect(h.vault.hasCreds == false)
         h.finish()
     }
+
+    @Test func signedInEmail() async throws {
+        let h = Harness(signedIn: false, session: nil)
+        #expect(h.store.email == nil)
+        try await h.store.signIn(email: "driver@example.com", password: "fake-password", pin: "0000")
+        #expect(h.store.email == "driver@example.com")
+        h.store.signOut()
+        #expect(h.store.email == nil)
+        h.finish()
+    }
+
+    @Test func lastKnownSnapshotFallsBackToCache() async throws {
+        let h = Harness()
+        #expect(h.store.lastKnownSnapshot == nil)
+        let cached = JeepSnapshot(
+            nickname: nil, locked: true, doorsOpen: [], tailgateOpen: false,
+            rangeMiles: 186, fuelPercent: 60, evPercent: 78, pluggedIn: true, charging: true,
+            chargeMinutesLeft: 30, tiresPsi: ["FL": 35], odometerMiles: 7671,
+            latitude: 0.0, longitude: 0.0, supported: [.lock],
+            updatedAt: TestData.start.addingTimeInterval(-900))
+        try h.cache.save(cached)
+        #expect(h.store.snapshot == nil)
+        #expect(h.store.lastKnownSnapshot == cached)  // before the store has shown anything
+        await h.store.refresh()
+        #expect(h.store.lastKnownSnapshot == h.store.snapshot)
+        #expect(h.store.lastKnownSnapshot != cached)
+        h.finish()
+    }
 }

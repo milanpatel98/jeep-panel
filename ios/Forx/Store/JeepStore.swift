@@ -96,6 +96,17 @@ final class JeepStore {
         }
     }
 
+    /// What is shown, or else the snapshot on disk: the background refresh compares the
+    /// next reading with this.
+    var lastKnownSnapshot: JeepSnapshot? {
+        snapshot ?? cache.load()
+    }
+
+    /// The signed-in Uconnect email, for Settings. Read from the Keychain; never logged.
+    var email: String? {
+        vault.load()?.email
+    }
+
     /// The patch for `window.jeepNative.apply(patch)`.
     var patch: [String: Any] {
         panelPatch(snapshot, pending: pending, offline: offline, message: message, messageId: messageId, now: now())

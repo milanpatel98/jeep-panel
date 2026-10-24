@@ -4,7 +4,8 @@
 // Browser: the same calls flip the sample state locally, like before.
 //
 // Contract (Swift side must match):
-//   web → Swift: {type:"ready"} on load; {type:"command", action} with action one of ACTIONS.
+//   web → Swift: {type:"ready"} on load; {type:"command", action} with action one of ACTIONS;
+//     {type:"settings"} from the settings button (native only; Swift opens its Settings sheet).
 //   Swift → web: window.jeepNative.apply(patch); patch keys are the `state` keys plus
 //     pending:   {lock?, climate?, lights?, horn?, gate?: bool}  ring on the button; taps ignored
 //     supported: string[] of "lock"|"climate"|"lights"|"horn"|"gate"  others are hidden
@@ -36,6 +37,13 @@ export function request(action) {
   if (state.pending?.[PENDING_KEY[action]]) return   // the Jeep is still working on it: one tap, one command
   if (isNative()) window.webkit.messageHandlers.jeep.postMessage({ type: 'command', action })
   else local[action]()
+}
+
+// the settings button: native Settings in the iPhone app; the browser has none
+export function openSettings() {
+  if (!isNative()) return false
+  window.webkit.messageHandlers.jeep.postMessage({ type: 'settings' })
+  return true
 }
 
 // the status-line message: visible for 4 s from each new messageId

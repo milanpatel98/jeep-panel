@@ -6,8 +6,15 @@ struct ForxApp: App {
     static let foregroundInterval: Duration = .seconds(120)
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var store = ForxApp.makeStore()
+    @State private var store: JeepStore
     @State private var foregroundRefresh: Task<Void, Never>? = nil
+
+    init() {
+        let store = ForxApp.makeStore()
+        _store = State(initialValue: store)
+        // Before the app finishes launching, as BGTaskScheduler requires.
+        Refresher.register(store: store)
+    }
 
     var body: some Scene {
         WindowGroup {

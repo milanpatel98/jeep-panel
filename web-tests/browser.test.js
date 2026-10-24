@@ -10,6 +10,10 @@ test('browserIsNotNative', () => {
   assert.equal(native.isNative(), false)
 })
 
+test('browserHasNoNativeSettings', () => {
+  assert.equal(native.openSettings(), false)
+})
+
 test('browserRequestTogglesLocally', () => {
   native.request('unlock'); assert.equal(state.locked, false)
   native.request('lock'); assert.equal(state.locked, true)

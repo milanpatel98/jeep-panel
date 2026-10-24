@@ -30,6 +30,12 @@ test('requestDoesNotChangeStateWhenNative', () => {
   assert.deepEqual(posted, [{ type: 'command', action: 'unlock' }])
 })
 
+test('settingsTapPostsSettings', () => {
+  posted.length = 0
+  assert.equal(native.openSettings(), true)
+  assert.deepEqual(posted, [{ type: 'settings' }])
+})
+
 test('requestIgnoresUnknownAction', () => {
   posted.length = 0
   native.request('selfDestruct')
