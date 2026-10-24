@@ -36,7 +36,11 @@ targets:
   JeepAppTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [JeepAppTests]
+    sources:
+      - path: JeepAppTests
+        excludes: ["Fixtures"]
+      - path: JeepAppTests/Fixtures
+        type: folder
     dependencies:
       - target: JeepApp
 schemes:
