@@ -142,7 +142,7 @@ svg { display: block; width: 100%; height: 100%; }
 .sheet.closed { transform: translateY(calc(100% - 36px - var(--bottom-inset))); }
 .grip { height: 24px; display: grid; place-items: center; flex: none; cursor: grab; }
 .grip i { width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.18); }
-.panel { display: none; flex: 1; min-height: 0; overflow: hidden auto; padding: 4px 20px calc(24px + var(--bottom-inset)); -webkit-overflow-scrolling: touch; }
+.panel { display: none; flex: 1; min-height: 0; overflow: hidden auto; padding: 4px 20px calc(24px + var(--bottom-inset)); -webkit-overflow-scrolling: touch; touch-action: none; }
 .sheet:not(.open) .panel { overflow: hidden; }
 #app[data-screen="home"] [data-panel="home"], #app[data-screen="controls"] [data-panel="controls"],
 #app[data-screen="climate"] [data-panel="climate"], #app[data-screen="location"] [data-panel="location"],
@@ -159,8 +159,9 @@ svg { display: block; width: 100%; height: 100%; }
 #app[data-screen="trails"], #app[data-screen="about"] { --peek: 300px; }
 #app[data-screen="home"] .panel { overflow: hidden; }
 /* The sheet moves only by its own pointer drag, never by a browser pan (in the iPhone app the page itself
-   pans for pull-to-refresh, which would steal the drag). An open panel that scrolls pans vertically and
-   never hands the scroll on to the page. */
+   pans for pull-to-refresh, which would steal the drag). .panel is a scroll container, so it needs its own
+   touch-action: none (above). Only an open panel that scrolls pans vertically, and never hands the scroll
+   on to the page. */
 .sheet { touch-action: none; }
 #app:not([data-screen="home"]) .sheet.open .panel { touch-action: pan-y; overscroll-behavior: contain; }
 
