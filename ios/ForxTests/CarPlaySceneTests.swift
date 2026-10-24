@@ -9,6 +9,7 @@ final class FakeCarPlayInterface: CarPlayInterface {
     var pushed: [CPTemplate] = []
     func setRoot(_ t: CPTemplate) { roots.append(t) }
     func push(_ t: CPTemplate) { pushed.append(t) }
+    var topTemplate: CPTemplate? { pushed.last ?? roots.last }
 }
 
 @MainActor
@@ -34,9 +35,11 @@ struct CarPlaySceneTests {
             updatedAt: now, ignitionOn: false, gasRangeMiles: nil)
     }
 
-    private func model(_ s: JeepSnapshot?, signedIn: Bool = true) -> CarPlayModel {
+    private func model(
+        _ s: JeepSnapshot?, signedIn: Bool = true, pending: Set<JeepCommand> = [], climateOn: Bool = false
+    ) -> CarPlayModel {
         CarPlayModel.make(
-            snapshot: s, pending: [], climateOn: false, message: nil,
+            snapshot: s, pending: pending, climateOn: climateOn, message: nil,
             signedIn: signedIn, roof: "on", now: now, timeZone: TimeZone(identifier: "UTC")!)
     }
 
@@ -61,6 +64,13 @@ struct CarPlaySceneTests {
         #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
         #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
 
+        // The same model again reassigns nothing (no flicker).
+        let mapBefore = t.mapTemplate.mapButtons
+        let barBefore = t.mapTemplate.trailingNavigationBarButtons
+        t.update(full)
+        #expect(t.mapTemplate.mapButtons.first === mapBefore.first)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.first === barBefore.first)
+
         // No Lights support: Lights is absent, More stays; same map template, updated in place.
         let noLights = model(snap(supported: [.lock, .unlock, .climateOn, .climateOff]))
         t.update(noLights)
@@ -83,6 +93,37 @@ struct CarPlaySceneTests {
         t.update(model(snap(locked: false)))
         t.tap(.lock)
         #expect(rec.commands == [.unlock, .lock])
+    }
+
+    @Test func lockTapWhenUnknownSendsLock() {
+        let rec = Recorder()
+        let t = make(FakeCarPlayInterface(), rec)
+        t.update(model(snap(locked: nil)))
+        t.tap(.lock)
+        #expect(rec.commands == [.lock])
+    }
+
+    @Test func pendingTapIsIgnored() {
+        let rec = Recorder()
+        let t = make(FakeCarPlayInterface(), rec)
+        t.update(model(snap(locked: true), pending: [.unlock]))
+        t.tap(.lock)
+        t.update(model(snap(), pending: [.climateOff], climateOn: true))
+        #expect(t.shownButtons.first { $0.kind == .climate }?.state == .pending)
+        t.tap(.climate)
+        #expect(rec.commands.isEmpty)
+    }
+
+    @Test func moreAndSettingsDoNotPushTwice() {
+        let fake = FakeCarPlayInterface()
+        let t = make(fake, Recorder())
+        t.update(model(snap()))
+        t.tap(.more)
+        t.tap(.more)
+        #expect(fake.pushed.count == 1)
+        t.showSettings()
+        t.showSettings()
+        #expect(fake.pushed.count == 2)
     }
 
     @Test func searchOpensAppleMaps() {

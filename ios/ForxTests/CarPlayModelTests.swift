@@ -84,6 +84,10 @@ struct CarPlayModelTests {
         #expect(!titles.contains("Tailgate"))
         #expect(titles == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Trip"])
         #expect(m.more.filter(\.roof).map(\.title) == ["Top on", "Panels off", "Top off"])
+        #expect(m.more.compactMap(\.roofKey) == ["on", "panels", "off"])
+        #expect(m.more.filter { !$0.roof }.allSatisfy { $0.roofKey == nil })
+        #expect(m.buttons.first { $0.kind == .lock }?.isLocked == true)
+        #expect(model(snap(locked: nil)).buttons.first { $0.kind == .lock }?.isLocked == nil)
 
         let all = model(snap())
         #expect(all.more.map(\.title)

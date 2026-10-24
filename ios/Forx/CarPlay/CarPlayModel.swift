@@ -14,14 +14,19 @@ nonisolated struct CarPlayButton: Sendable, Equatable {
     let kind: CarPlayButtonKind
     let state: CarPlayButtonState
     let symbol: String
+    /// The snapshot's lock state (Lock button only): true locked, false unlocked, nil unknown.
+    let isLocked: Bool?
 }
 
-/// A row of the More list. `roof` marks the three roof choices (they change the 3D Jeep only).
+/// A row of the More list. `roofKey` ("on", "panels" or "off") marks the three roof choices
+/// (they change the 3D Jeep only).
 nonisolated struct CarPlayRow: Sendable, Equatable {
     let title: String
     let detail: String
     let action: JeepCommand?
-    let roof: Bool
+    let roofKey: String?
+
+    var roof: Bool { roofKey != nil }
 }
 
 nonisolated struct CarPlayApp: Sendable, Equatable {
@@ -121,19 +126,19 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
             let unlocked = s?.locked == false
             let state: CarPlayButtonState = busy ? .pending : (unlocked ? .on : .off)
             let symbol = s?.locked == false ? "lock.open.fill" : "lock.fill"
-            buttons.append(CarPlayButton(kind: .lock, state: state, symbol: symbol))
+            buttons.append(CarPlayButton(kind: .lock, state: state, symbol: symbol, isLocked: s?.locked))
         }
         if supported.contains(.climateOn) || supported.contains(.climateOff) {
             let busy = pending.contains(.climateOn) || pending.contains(.climateOff)
             let state: CarPlayButtonState = busy ? .pending : (climateOn ? .on : .off)
-            buttons.append(CarPlayButton(kind: .climate, state: state, symbol: "fan.fill"))
+            buttons.append(CarPlayButton(kind: .climate, state: state, symbol: "fan.fill", isLocked: nil))
         }
         if supported.contains(.lights) {
             // Momentary: never stays on.
             let state: CarPlayButtonState = pending.contains(.lights) ? .pending : .off
-            buttons.append(CarPlayButton(kind: .lights, state: state, symbol: "headlight.high.beam.fill"))
+            buttons.append(CarPlayButton(kind: .lights, state: state, symbol: "headlight.high.beam.fill", isLocked: nil))
         }
-        buttons.append(CarPlayButton(kind: .more, state: .off, symbol: "ellipsis"))
+        buttons.append(CarPlayButton(kind: .more, state: .off, symbol: "ellipsis", isLocked: nil))
         return buttons
     }
 
@@ -144,22 +149,22 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
     ) -> [CarPlayRow] {
         let supported: Set<JeepCommand> = s?.supported ?? []
         var rows: [CarPlayRow] = []
-        rows.append(CarPlayRow(title: "Tires", detail: tiresDetail(s), action: nil, roof: false))
+        rows.append(CarPlayRow(title: "Tires", detail: tiresDetail(s), action: nil, roofKey: nil))
         rows.append(CarPlayRow(
             title: "Charging", detail: chargingDetail(s, now: now, timeZone: timeZone),
-            action: nil, roof: false))
+            action: nil, roofKey: nil))
         let roofs: [(String, String)] = [("on", "Top on"), ("panels", "Panels off"), ("off", "Top off")]
         for (key, title) in roofs {
-            rows.append(CarPlayRow(title: title, detail: roof == key ? "✓" : "", action: nil, roof: true))
+            rows.append(CarPlayRow(title: title, detail: roof == key ? "✓" : "", action: nil, roofKey: key))
         }
         if supported.contains(.horn) {
-            rows.append(CarPlayRow(title: "Horn", detail: "", action: .horn, roof: false))
+            rows.append(CarPlayRow(title: "Horn", detail: "", action: .horn, roofKey: nil))
         }
         if supported.contains(.gate) {
-            rows.append(CarPlayRow(title: "Tailgate", detail: "", action: .gate, roof: false))
+            rows.append(CarPlayRow(title: "Tailgate", detail: "", action: .gate, roofKey: nil))
         }
         let trip = s?.odometerMiles.map { "\(grouped($0)) mi" } ?? dash
-        rows.append(CarPlayRow(title: "Trip", detail: trip, action: nil, roof: false))
+        rows.append(CarPlayRow(title: "Trip", detail: trip, action: nil, roofKey: nil))
         return rows
     }
 
