@@ -106,7 +106,7 @@ ios/
     Store/Vault.swift             # Keychain + FaceIDGate
     Store/SnapshotCache.swift
     Store/JeepStore.swift
-    UI/PanelWebView.swift         # WKWebView + jeepapp:// scheme handler + message bridge
+    UI/PanelWebView.swift         # WKWebView + forx:// scheme handler + message bridge
     UI/SignInView.swift
     UI/SettingsView.swift
     UI/RootView.swift
@@ -388,8 +388,8 @@ tools/make_fixtures.py            # runs py-uconnect's pure functions to produce
 **Interfaces:**
 - Consumes: Task 3's JS contract, `JeepStore`.
 - Produces: `struct PanelWebView: UIViewRepresentable`:
-  - Serves the bundle's `Web/` folder through a `WKURLSchemeHandler` on scheme `jeepapp`.
-    - Loads `jeepapp://app/index.html`.
+  - Serves the bundle's `Web/` folder through a `WKURLSchemeHandler` on scheme `forx`.
+    - Loads `forx://app/index.html`.
     - Sets correct MIME types for html, js, css, glb, svg and png.
     - Sends the header `Access-Control-Allow-Origin: *`.
   - Message handler name `jeep`:
