@@ -3,7 +3,7 @@ import Foundation
 
 /// Remote commands the app sends, ported from py-uconnect's `command.py`.
 /// The raw value is the command name POSTed as `{"command": <name>, "pinAuth": <token>}`.
-nonisolated enum JeepCommand: String, CaseIterable, Sendable {
+nonisolated enum JeepCommand: String, CaseIterable, Sendable, Codable {
     case lock = "RDL"
     case unlock = "RDU"
     case climateOn = "REON"
