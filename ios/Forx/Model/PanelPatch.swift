@@ -13,12 +13,13 @@ nonisolated func panelKey(_ cmd: JeepCommand) -> String {
 
 /// JeepSnapshot → the patch for `window.jeepNative.apply(patch)` (src/native.js contract).
 /// Only keys the snapshot can fill are sent; anything unknown is JSON null, never a guess.
-/// `name`, `gear`, `trail`, `climate` and the rest stay the web's own defaults.
+/// `name`, `gear`, `trail` and the rest stay the web's own defaults; of `climate` only `on`
+/// is sent (`climateOn`: the store's view after a confirmed Climate On/Off).
 /// `timeZone` is for `battery.fullBy`; tests pass a fixed one.
 /// Every value is JSONSerialization-valid (String, NSNumber, NSNull, Array, Dictionary).
 nonisolated func panelPatch(
     _ s: JeepSnapshot?, pending: Set<JeepCommand>, offline: Bool, message: String?,
-    messageId: Int, now: Date, timeZone: TimeZone = .current
+    messageId: Int, climateOn: Bool = false, now: Date, timeZone: TimeZone = .current
 ) -> [String: Any] {
     let hasPlace = s?.latitude?.isFinite == true && s?.longitude?.isFinite == true
     let pendingKeys = Set(pending.map(panelKey))
@@ -45,6 +46,7 @@ nonisolated func panelPatch(
         "message": json(message),
         "messageId": messageId,
     ]
+    patch["climate"] = ["on": climateOn] as [String: Any]
     // Doors only when a remote status came back (locked is its proxy); otherwise the web keeps its value.
     if let s, s.locked != nil {
         let open = Set(s.doorsOpen)

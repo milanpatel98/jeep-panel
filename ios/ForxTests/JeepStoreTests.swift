@@ -30,6 +30,7 @@ private nonisolated final class FakeAPI: UconnectAPIProtocol {
         var holdSends = false
         var waiting: [CheckedContinuation<Void, Never>] = []
         var updates = 0
+        var status: Data? = nil
     }
 
     private let state = Mutex(State())
@@ -42,6 +43,11 @@ private nonisolated final class FakeAPI: UconnectAPIProtocol {
     /// Queues failures for the next calls of `method` ("vehicles", "info", "status", "location", "send").
     func fail(_ method: String, _ errors: UconnectError...) {
         state.withLock { $0.failures[method, default: []].append(contentsOf: errors) }
+    }
+
+    /// Replaces the remote-status fixture for the following reads.
+    func setStatus(_ json: String) {
+        state.withLock { $0.status = Data(json.utf8) }
     }
 
     func holdSends(_ hold: Bool) {
@@ -80,7 +86,7 @@ private nonisolated final class FakeAPI: UconnectAPIProtocol {
 
     func remoteStatus(vin: String) async throws(UconnectError) -> Data {
         try record("status")
-        return Fixture.data("remote_status")
+        return state.withLock { $0.status } ?? Fixture.data("remote_status")
     }
 
     func location(vin: String) async throws(UconnectError) -> Data {
@@ -163,25 +169,33 @@ private nonisolated final class FakeVault: VaultProtocol {
         state.withLock { $0.session }
     }
 
+    func forgetPin() {
+        state.withLock { $0.creds = nil }  // load() needs all three
+    }
+
     func clear() {
         state.withLock { $0 = State() }
     }
 }
 
 private nonisolated final class FakeFaceID: FaceIDGate {
-    private let state: Mutex<(answer: Bool, asked: [String])>
+    private let state: Mutex<(answer: FaceIDAnswer, asked: [String])>
 
     init(answer: Bool) {
-        state = Mutex((answer, []))
+        state = Mutex((answer ? .confirmed : .declined, []))
     }
 
     var asked: [String] { state.withLock { $0.asked } }
 
     func setAnswer(_ answer: Bool) {
-        state.withLock { $0.answer = answer }
+        state.withLock { $0.answer = answer ? .confirmed : .declined }
     }
 
-    func confirm(reason: String) async -> Bool {
+    func setUnavailable() {
+        state.withLock { $0.answer = .unavailable }
+    }
+
+    func confirm(reason: String) async -> FaceIDAnswer {
         state.withLock { s in
             s.asked.append(reason)
             return s.answer
@@ -282,6 +296,12 @@ private final class Harness {
 }
 
 private let noAnswer = "Jeep didn't answer. Try again."
+
+private let unlockedStatus = #"""
+{"doors": {"driver": {"status": "UNLOCKED"}, "passenger": {"status": "UNLOCKED"},
+ "leftRear": {"status": "UNLOCKED"}, "rightRear": {"status": "UNLOCKED"}},
+ "engine": {"status": "OFF"}}
+"""#
 
 // MARK: - Tests
 
@@ -396,6 +416,139 @@ struct JeepStoreTests {
         await h.store.perform(.lock)
         #expect(h.faceID.asked.isEmpty)
         #expect(h.api.sent == [.lock])
+        h.finish()
+    }
+
+    @Test func gateNeedsFaceIDOnPhone() async {
+        let h = Harness(faceIDAnswer: false)
+        await h.store.refresh()
+
+        await h.store.perform(.gate)
+        #expect(h.faceID.asked == ["Open the tailgate"])
+        #expect(h.api.sent.isEmpty)
+        #expect(h.store.pending.isEmpty)
+
+        await h.store.perform(.gate, fromCarPlay: true)
+        #expect(h.faceID.asked.count == 1)
+        #expect(h.api.sent == [.gate])
+
+        h.faceID.setAnswer(true)
+        await h.store.perform(.gate)
+        #expect(h.faceID.asked.count == 2)
+        #expect(h.api.sent == [.gate, .gate])
+        h.finish()
+    }
+
+    @Test func noFaceIDOrPasscodeSaysSo() async {
+        let h = Harness()
+        h.faceID.setUnavailable()
+        await h.store.refresh()
+
+        await h.store.perform(.unlock)
+        #expect(h.api.sent.isEmpty)
+        #expect(h.store.pending.isEmpty)
+        #expect(h.store.message == "Set up Face ID or a passcode to unlock.")
+        h.finish()
+    }
+
+    @Test func badPinStopsAndAsks() async throws {
+        let h = Harness()
+        await h.store.refresh()
+        h.api.fail("send", .badPin)
+
+        await h.store.perform(.lock)
+        #expect(h.api.sent == [.lock])
+        #expect(h.store.pending.isEmpty)
+        #expect(h.store.message == "PIN is wrong. Sign in again.")
+        #expect(h.store.signInNote == "PIN is wrong. Sign in again.")
+        #expect(h.store.needsSignIn == true)
+        #expect(h.vault.load() == nil)  // the wrong PIN is forgotten, also across launches
+
+        // No commands, and no refresh, until signed in again.
+        await h.store.perform(.lock)
+        await h.store.perform(.horn)
+        await h.store.refresh()
+        #expect(h.api.sent == [.lock])
+        #expect(h.api.calls("info") == 1)
+
+        try await h.store.signIn(email: "driver@example.com", password: "fake-password", pin: "1234")
+        #expect(h.store.needsSignIn == false)
+        #expect(h.store.signInNote == nil)
+        await h.store.perform(.lock)
+        #expect(h.api.sent == [.lock, .lock])
+        h.finish()
+    }
+
+    @Test func confirmedLockShowsLockedRightAway() async {
+        let h = Harness()
+        h.api.setStatus(unlockedStatus)
+        await h.store.refresh()
+        #expect(h.store.snapshot?.locked == false)
+
+        // Remote status still says unlocked after the Jeep confirmed Lock: show the confirmed state.
+        await h.store.perform(.lock)
+        #expect(h.store.snapshot?.locked == true)
+        #expect(h.store.patch["locked"] as? Bool == true)
+        #expect(h.cache.load()?.locked == true)
+        #expect(h.store.pending.isEmpty)
+        #expect(h.store.message == nil)
+
+        // The next refresh corrects it.
+        await h.store.refresh()
+        #expect(h.store.snapshot?.locked == false)
+        h.finish()
+    }
+
+    @Test func confirmedUnlockShowsUnlockedRightAway() async {
+        let h = Harness()
+        await h.store.refresh()
+        #expect(h.store.snapshot?.locked == true)
+
+        await h.store.perform(.unlock)
+        #expect(h.store.snapshot?.locked == false)
+        #expect(h.store.patch["locked"] as? Bool == false)
+        h.finish()
+    }
+
+    @Test func failedLockLeavesStateAlone() async {
+        let h = Harness()
+        h.api.setStatus(unlockedStatus)
+        await h.store.refresh()
+        h.api.fail("send", .commandFailed)
+
+        await h.store.perform(.lock)
+        #expect(h.store.snapshot?.locked == false)
+        h.finish()
+    }
+
+    @Test func climateOnFor15MinOrUntilOff() async {
+        let h = Harness()
+        await h.store.refresh()
+        func climateOn() -> Bool? { (h.store.patch["climate"] as? [String: Any])?["on"] as? Bool }
+        #expect(climateOn() == false)
+
+        // A failed start shows nothing.
+        h.api.fail("send", .commandFailed)
+        await h.store.perform(.climateOn)
+        #expect(climateOn() == false)
+
+        await h.store.perform(.climateOn)
+        #expect(climateOn() == true)
+        h.clock.advance(15 * 60 - 1)
+        #expect(climateOn() == true)
+        h.clock.advance(1)
+        #expect(climateOn() == false)  // the Jeep's remote start has ended
+
+        await h.store.perform(.climateOn)
+        #expect(climateOn() == true)
+        await h.store.perform(.climateOff)
+        #expect(climateOn() == false)
+
+        // A failed Off keeps it on.
+        await h.store.perform(.climateOn)
+        h.api.fail("send", .timeout)
+        await h.store.perform(.climateOff)
+        #expect(climateOn() == true)
         h.finish()
     }
 

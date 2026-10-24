@@ -130,6 +130,14 @@ struct PanelPatchTests {
         #expect((patch(nil)["battery"] as? [String: Any])?["fullBy"] is NSNull)
     }
 
+    @Test func climateOnlySendsOn() {
+        let on = panelPatch(snap(), pending: [], offline: false, message: nil, messageId: 0, climateOn: true, now: now)
+        #expect((on["climate"] as? [String: Any])?["on"] as? Bool == true)
+        #expect((on["climate"] as? [String: Any])?.count == 1)  // target, interior... stay the web's
+        #expect((patch(snap())["climate"] as? [String: Any])?["on"] as? Bool == false)
+        #expect((patch(nil)["climate"] as? [String: Any])?["on"] as? Bool == false)
+    }
+
     @Test func patchWithDoorsIsValidJSON() {
         let p = patch(snap(charging: true, doorsOpen: ["driver"], tailgate: true, chargeMinutes: 30))
         #expect(JSONSerialization.isValidJSONObject(p))

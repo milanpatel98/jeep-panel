@@ -24,6 +24,8 @@ nonisolated protocol VaultProtocol: Sendable {
     func load() -> (email: String, password: String, pin: String)?
     func saveSession(_ session: Session)
     func loadSession() -> Session?
+    /// Forgets the PIN (it was wrong): `load()` is nil until the next sign-in.
+    func forgetPin()
     func clear()
 }
 
@@ -34,7 +36,12 @@ nonisolated protocol VaultProtocol: Sendable {
 @Observable
 final class JeepStore {
     static let noAnswer = "Jeep didn't answer. Try again."
+    static let badPin = "PIN is wrong. Sign in again."
+    static let noFaceID = "Set up Face ID or a passcode to unlock."
     static let unlockReason = "Unlock your Jeep"
+    static let gateReason = "Open the tailgate"
+    /// The Jeep's remote start runs this long; Climate shows on until then or a confirmed Off.
+    static let climateDuration: TimeInterval = 15 * 60
     /// The UI gives up on a command after this long, even if the network call is still polling.
     static let commandDeadline: Duration = .seconds(60)
     static let messageDuration: Duration = .seconds(4)
@@ -54,7 +61,11 @@ final class JeepStore {
     /// Bumped for every new message, even the same text, so the panel shows it again.
     private(set) var messageId = 0
     private(set) var needsSignIn: Bool
+    /// Why the sign-in sheet is up, when the app asked for it (shown on the sheet).
+    private(set) var signInNote: String? = nil
     private(set) var vin: String? = nil
+    /// Climate counts as on until this time (set by a confirmed Climate On).
+    private(set) var climateOnUntil: Date? = nil
 
     /// Called with the snapshot shown before and the new one, each time a refresh reads the Jeep
     /// (foreground or background). The alert tracker learns from it.
@@ -123,7 +134,11 @@ final class JeepStore {
 
     /// The patch for `window.jeepNative.apply(patch)`.
     var patch: [String: Any] {
-        panelPatch(snapshot, pending: pending, offline: offline, message: message, messageId: messageId, now: now())
+        let now = now()
+        let climateOn = climateOnUntil.map { now < $0 } ?? false
+        return panelPatch(
+            snapshot, pending: pending, offline: offline, message: message, messageId: messageId,
+            climateOn: climateOn, now: now)
     }
 
     // MARK: Sign-in
@@ -147,6 +162,7 @@ final class JeepStore {
         services = []
         offline = false
         needsSignIn = false
+        signInNote = nil
         await refresh(fresh: true)
     }
 
@@ -169,6 +185,8 @@ final class JeepStore {
         pending = []
         offline = false
         message = nil
+        climateOnUntil = nil
+        signInNote = nil
         needsSignIn = true
     }
 
@@ -340,12 +358,21 @@ final class JeepStore {
     /// Sends a command. The control shows pending until the Jeep confirms and a refresh
     /// shows the new state. A failure, or no answer within 60 s, reverts it with
     /// "Jeep didn't answer. Try again." A command is never sent again automatically.
+    /// A wrong PIN asks for the sign-in (and PIN) again; no command goes out until then.
     func perform(_ cmd: JeepCommand, fromCarPlay: Bool = false) async {
         guard !pending.contains(cmd), !needsSignIn else { return }
-        if cmd == .unlock && !fromCarPlay {
-            guard await faceID.confirm(reason: Self.unlockReason) else { return }
+        // Unlock and Tailgate open part of the car: Face ID on the phone (CarPlay is in the car).
+        if (cmd == .unlock || cmd == .gate) && !fromCarPlay {
+            switch await faceID.confirm(reason: cmd == .gate ? Self.gateReason : Self.unlockReason) {
+            case .confirmed: break
+            case .declined: return
+            case .unavailable:
+                show(Self.noFaceID)
+                return
+            }
             guard !pending.contains(cmd), !needsSignIn else { return }
         }
+        let epoch = self.epoch
 
         let attempt = begin(cmd)
         if api == nil || vin == nil {
@@ -368,6 +395,16 @@ final class JeepStore {
         }
 
         if let failure {
+            if failure == .badPin {
+                // A wrong PIN can lock the real one: no command until it's entered again.
+                end(cmd, attempt)
+                guard epoch == self.epoch else { return }  // signed out meanwhile
+                vault.forgetPin()
+                signInNote = Self.badPin
+                needsSignIn = true
+                show(Self.badPin)
+                return
+            }
             fail(cmd, attempt)
             if failure == .sessionExpired {
                 // The car may already have acted: don't resend. Log in again for the next call.
@@ -380,9 +417,33 @@ final class JeepStore {
         // picked up by this refresh; otherwise the control stays pending until it's done
         // (and if the deadline passes during it, it just ends without the failure copy).
         confirmed.insert(attempt)
+        applyConfirmed(cmd, epoch: epoch)
         await refresh(fresh: true)
+        // Remote status can lag the car: keep the lock state the Jeep confirmed until the next refresh.
+        if cmd == .lock || cmd == .unlock {
+            applyConfirmed(cmd, epoch: epoch)
+        }
         end(cmd, attempt)
         confirmed.remove(attempt)
+    }
+
+    /// What a confirmed command changed: the lock state on the snapshot, and Climate on/off.
+    private func applyConfirmed(_ cmd: JeepCommand, epoch: Int) {
+        guard epoch == self.epoch else { return }
+        switch cmd {
+        case .lock, .unlock:
+            let locked = cmd == .lock
+            guard var s = snapshot, s.locked != locked else { return }
+            s.locked = locked
+            snapshot = s
+            try? cache.save(s)
+        case .climateOn:
+            climateOnUntil = now().addingTimeInterval(Self.climateDuration)
+        case .climateOff:
+            climateOnUntil = nil
+        case .lights, .horn, .gate:
+            break
+        }
     }
 
     private func begin(_ cmd: JeepCommand) -> Int {

@@ -41,8 +41,13 @@ nonisolated struct Vault: Sendable, VaultProtocol {
         read(.session).flatMap { try? JSONDecoder().decode(Session.self, from: $0) }
     }
 
+    /// Drops the PIN only: `load()` returns nil until the next sign-in saves a new one.
+    func forgetPin() {
+        _ = SecItemDelete(query(.pin) as CFDictionary)
+    }
+
     func clear() {
-        for account in Account.allCases { SecItemDelete(query(account) as CFDictionary) }
+        for account in Account.allCases { _ = SecItemDelete(query(account) as CFDictionary) }
     }
 
     // MARK: Keychain
@@ -85,25 +90,33 @@ nonisolated struct Vault: Sendable, VaultProtocol {
     }
 }
 
-/// Asks the owner to confirm before a sensitive command (Unlock on the iPhone).
+/// What the owner answered to the Face ID prompt.
+nonisolated enum FaceIDAnswer: Sendable, Equatable {
+    case confirmed
+    case declined
+    /// The phone has no Face ID, Touch ID or passcode set up: there is nothing to ask.
+    case unavailable
+}
+
+/// Asks the owner to confirm before a sensitive command (Unlock and Tailgate on the iPhone).
 nonisolated protocol FaceIDGate: Sendable {
-    func confirm(reason: String) async -> Bool
+    func confirm(reason: String) async -> FaceIDAnswer
 }
 
 /// Face ID, falling back to the device passcode (`.deviceOwnerAuthentication`).
 nonisolated struct LAFaceIDGate: FaceIDGate {
     init() {}
 
-    func confirm(reason: String) async -> Bool {
+    func confirm(reason: String) async -> FaceIDAnswer {
         let context = LAContext()
         var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return false }
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return .unavailable }
         let ok = await withCheckedContinuation { continuation in
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
                 continuation.resume(returning: ok)
             }
         }
         withExtendedLifetime(context) {}  // keep the context alive until the prompt is answered
-        return ok
+        return ok ? .confirmed : .declined
     }
 }

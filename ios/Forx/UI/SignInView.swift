@@ -83,9 +83,9 @@ struct SignInView: View {
                     Text("The 4-digit PIN for remote commands.")
                 }
 
-                if let error {
+                if let note = error ?? store.signInNote {
                     Section {
-                        Text(error)
+                        Text(note)
                             .foregroundStyle(.red)
                     }
                 }
