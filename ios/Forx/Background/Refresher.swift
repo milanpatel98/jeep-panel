@@ -79,8 +79,25 @@ nonisolated struct AlertTracker {
 
     let defaults: UserDefaults
 
-    /// Records this refresh and returns the alerts to notify, in `Alert.allCases` order.
+    /// A background refresh: records it and returns the alerts to notify, in `Alert.allCases` order.
     func update(previous: JeepSnapshot?, current: JeepSnapshot, now: Date) -> [Alert] {
+        let active = activeAlerts(previous: previous, current: current, now: now)
+        let fresh = newAlerts(
+            active: active, previouslyActive: storedActive, enabled: AlertSettings.enabled(in: defaults))
+        storedActive = active
+        return Alert.allCases.filter(fresh.contains)
+    }
+
+    /// Any refresh (also the foreground ones, which never notify): tracks `unlocked.since` and
+    /// drops alerts that are no longer active, but never adds one, so the next background
+    /// run still sees a newly active alert as new and notifies.
+    func observe(previous: JeepSnapshot?, current: JeepSnapshot, now: Date) {
+        let active = activeAlerts(previous: previous, current: current, now: now)
+        storedActive = storedActive.intersection(active)
+    }
+
+    /// Updates `unlocked.since` for this reading, then evaluates the rules.
+    private func activeAlerts(previous: JeepSnapshot?, current: JeepSnapshot, now: Date) -> Set<Alert> {
         let stored = defaults.object(forKey: Self.unlockedSinceKey) as? Date
         let since = nextUnlockedSince(stored, locked: current.locked, now: now)
         if let since {
@@ -88,13 +105,12 @@ nonisolated struct AlertTracker {
         } else {
             defaults.removeObject(forKey: Self.unlockedSinceKey)
         }
+        return Set(alerts(previous: previous, current: current, unlockedSince: since, now: now))
+    }
 
-        let active = Set(alerts(previous: previous, current: current, unlockedSince: since, now: now))
-        let previouslyActive = Set((defaults.stringArray(forKey: Self.activeKey) ?? []).compactMap(Alert.init(rawValue:)))
-        let fresh = newAlerts(
-            active: active, previouslyActive: previouslyActive, enabled: AlertSettings.enabled(in: defaults))
-        defaults.set(Alert.allCases.filter(active.contains).map(\.rawValue), forKey: Self.activeKey)
-        return Alert.allCases.filter(fresh.contains)
+    private var storedActive: Set<Alert> {
+        get { Set((defaults.stringArray(forKey: Self.activeKey) ?? []).compactMap(Alert.init(rawValue:))) }
+        nonmutating set { defaults.set(Alert.allCases.filter(newValue.contains).map(\.rawValue), forKey: Self.activeKey) }
     }
 
     /// Forgets the tracked state (on sign-out).
@@ -118,6 +134,10 @@ enum Refresher {
     /// Registers the task handler. Call once, before the app finishes launching.
     static func register(store: JeepStore) {
         self.store = store
+        // Every new reading, foreground or background, keeps the tracker current.
+        store.onSnapshot = { previous, current in
+            AlertTracker(defaults: .standard).observe(previous: previous, current: current, now: Date())
+        }
         let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskID, using: nil) { @Sendable task in
             let box = TaskBox(task: task)
             Task { @MainActor in Refresher.handle(box.task) }

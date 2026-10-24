@@ -6,12 +6,14 @@ struct SettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var confirmSignOut = false
+    /// Read from the Keychain once, when the sheet opens, not on every redraw.
+    @State private var email: String? = nil
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Account") {
-                    LabeledContent("Signed in as", value: store.email ?? "—")
+                    LabeledContent("Signed in as", value: email ?? "—")
                 }
 
                 Section("Alerts") {
@@ -37,6 +39,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .task { email = store.email }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

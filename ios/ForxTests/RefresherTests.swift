@@ -135,6 +135,44 @@ struct RefresherTests {
         #expect(tracker.update(previous: charging, current: done, now: now) == [.chargingDone])
     }
 
+    // MARK: Foreground refreshes (observe: learn, never add)
+
+    @Test func foregroundLockClearsLeftUnlocked() {
+        let d = freshDefaults()
+        let tracker = AlertTracker(defaults: d)
+        let open = snap(locked: false), shut = snap(locked: true)
+        #expect(tracker.update(previous: nil, current: open, now: now) == [])                                 // BG
+        #expect(tracker.update(previous: open, current: open, now: now.addingTimeInterval(600)) == [.leftUnlocked])  // BG
+        tracker.observe(previous: open, current: shut, now: now.addingTimeInterval(700))                      // FG locked
+        #expect(d.object(forKey: "unlocked.since") == nil)
+        #expect(d.stringArray(forKey: "alerts.active") == [])
+        tracker.observe(previous: shut, current: open, now: now.addingTimeInterval(800))                      // FG unlocked
+        #expect(d.object(forKey: "unlocked.since") as? Date == now.addingTimeInterval(800))
+        #expect(tracker.update(previous: open, current: open, now: now.addingTimeInterval(1400)) == [.leftUnlocked])  // BG
+    }
+
+    @Test func firstUnlockedTimeComesFromForeground() {
+        let d = freshDefaults()
+        let tracker = AlertTracker(defaults: d)
+        let open = snap(locked: false)
+        tracker.observe(previous: nil, current: open, now: now)                                               // FG
+        #expect(tracker.update(previous: open, current: open, now: now.addingTimeInterval(600)) == [.leftUnlocked])  // first BG run
+    }
+
+    @Test func foregroundNeverAddsSoBackgroundStillNotifies() {
+        let d = freshDefaults()
+        let tracker = AlertTracker(defaults: d)
+        let low = snap(range: 30)
+        tracker.observe(previous: nil, current: low, now: now)
+        #expect(d.stringArray(forKey: "alerts.active") ?? [] == [])
+        tracker.observe(previous: low, current: low, now: now.addingTimeInterval(120))
+        #expect(tracker.update(previous: low, current: low, now: now.addingTimeInterval(900)) == [.lowRange])
+        // already notified: foreground keeps it active while it stays true, so no repeat
+        tracker.observe(previous: low, current: low, now: now.addingTimeInterval(1000))
+        #expect(d.stringArray(forKey: "alerts.active") == ["lowRange"])
+        #expect(tracker.update(previous: low, current: low, now: now.addingTimeInterval(1800)) == [])
+    }
+
     @Test func trackerResetForgetsState() {
         let d = freshDefaults()
         let tracker = AlertTracker(defaults: d)

@@ -50,6 +50,10 @@ final class JeepStore {
     private(set) var needsSignIn: Bool
     private(set) var vin: String? = nil
 
+    /// Called with the snapshot shown before and the new one, each time a refresh reads the Jeep
+    /// (foreground or background). The alert tracker learns from it.
+    @ObservationIgnored var onSnapshot: ((_ previous: JeepSnapshot?, _ current: JeepSnapshot) -> Void)? = nil
+
     @ObservationIgnored private let makeAPI: (Session) -> any UconnectAPIProtocol
     @ObservationIgnored private let auth: any UconnectAuthProtocol
     @ObservationIgnored private let vault: any VaultProtocol
@@ -205,9 +209,11 @@ final class JeepStore {
 
         switch result {
         case .success(let s):
+            let previous = snapshot
             snapshot = s
             offline = false
             try? cache.save(s)
+            onSnapshot?(previous, s)
         case .failure(.network):
             offline = true
         case .failure:

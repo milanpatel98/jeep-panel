@@ -488,6 +488,24 @@ struct JeepStoreTests {
         h.finish()
     }
 
+    @Test func onSnapshotSeesEveryNewReading() async throws {
+        let h = Harness()
+        var seen: [(previous: JeepSnapshot?, current: JeepSnapshot)] = []
+        h.store.onSnapshot = { seen.append(($0, $1)) }
+        await h.store.refresh()
+        #expect(seen.count == 1)
+        #expect(seen.first?.previous == nil)
+        #expect(seen.first?.current == h.store.snapshot)
+        let first = h.store.snapshot
+        h.api.fail("info", .network)
+        await h.store.refresh()
+        #expect(seen.count == 1)  // a failed refresh is not a new reading
+        await h.store.refresh()
+        #expect(seen.count == 2)
+        #expect(seen.last?.previous == first)
+        h.finish()
+    }
+
     @Test func lastKnownSnapshotFallsBackToCache() async throws {
         let h = Harness()
         #expect(h.store.lastKnownSnapshot == nil)
