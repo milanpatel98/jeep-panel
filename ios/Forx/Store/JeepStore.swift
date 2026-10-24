@@ -134,11 +134,11 @@ final class JeepStore {
 
     /// The patch for `window.jeepNative.apply(patch)`.
     var patch: [String: Any] {
-        let now = now()
-        let climateOn = climateOnUntil.map { now < $0 } ?? false
+        let time = self.now()
+        let climateOn = climateOnUntil.map { time < $0 } ?? false
         return panelPatch(
             snapshot, pending: pending, offline: offline, message: message, messageId: messageId,
-            climateOn: climateOn, now: now)
+            climateOn: climateOn, now: time)
     }
 
     // MARK: Sign-in
