@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct JeepApp: App {
+struct ForxApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()

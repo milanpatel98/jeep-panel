@@ -4,5 +4,5 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   base: './',
   publicDir: 'public',
-  build: { target: 'es2020', chunkSizeWarningLimit: 1200, outDir: 'ios/JeepApp/Web', emptyOutDir: true },
+  build: { target: 'es2020', chunkSizeWarningLimit: 1200, outDir: 'ios/Forx/Web', emptyOutDir: true },
 })

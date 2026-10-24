@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import JeepApp
+@testable import Forx
 
 private let gigyaOK = Data(#"{"statusCode": 200, "errorCode": 0}"#.utf8)
 

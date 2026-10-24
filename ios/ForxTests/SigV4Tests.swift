@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import JeepApp
+@testable import Forx
 
 private nonisolated struct SigV4Fixture: Decodable {
     struct Creds: Decodable {

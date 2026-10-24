@@ -2,7 +2,7 @@
 
 To regenerate (from the repo root):
 
-    python3 -I tools/make_fixtures.py ios/JeepAppTests/Fixtures
+    python3 -I tools/make_fixtures.py ios/ForxTests/Fixtures
 
 The SigV4 expected values are computed by py-uconnect's own signer (sigv4.py),
 loaded straight from the reference checkout below; nothing is installed. All

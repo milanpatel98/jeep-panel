@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
-@testable import JeepApp
+@testable import Forx
 
 /// Manual clock: `sleep` advances it instead of waiting, so polling tests are instant and deterministic.
 private nonisolated final class FakeClock: Sendable {

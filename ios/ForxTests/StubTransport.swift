@@ -1,6 +1,6 @@
 import Foundation
 import Synchronization
-@testable import JeepApp
+@testable import Forx
 
 /// One queued canned response: used when `match` accepts the outgoing request.
 nonisolated struct StubResponse: Sendable {

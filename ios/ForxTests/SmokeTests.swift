@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import JeepApp
+@testable import Forx
 
 struct SmokeTests {
     @Test func appBundleHasWebFolder() {

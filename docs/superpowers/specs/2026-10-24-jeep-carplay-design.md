@@ -6,6 +6,7 @@ Date: 2026-10-24 · Owner: Milan Patel · Status: waiting for Milan's review
 
 A personal app for one car: Milan's black, lifted 2024 Wrangler 4-Door 4xe with the 12.3" Uconnect screen. It shows the real state of the Jeep and sends real commands (lock, unlock, and others the Jeep supports), on the iPhone and on the CarPlay screen.
 
+- App name: Forx (from "4x", four-by-four and the 4xe).
 - Audience: Milan only. No App Store, no other users, no server of ours.
 - Signing: free Apple account. On the iPhone the app runs with real data and is re-run from Xcode every 7 days. CarPlay runs in Xcode's CarPlay simulator. Moving CarPlay to the real Jeep later needs the paid account and Apple's approval; the code stays the same and only a build switch changes.
 
