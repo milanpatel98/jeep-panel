@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct RootView: View {
+    let store: JeepStore
+
     var body: some View {
-        Color.black
+        PanelWebView(store: store)
             .ignoresSafeArea()
+            .background(Color.black.ignoresSafeArea())
     }
 }
