@@ -43,6 +43,9 @@ targets:
         type: folder
     dependencies:
       - target: Forx
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Forx:
     build:
