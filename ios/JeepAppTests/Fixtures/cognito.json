@@ -1,0 +1,9 @@
+{
+  "Credentials": {
+    "AccessKeyId": "AKIAFAKEACCESSKEY",
+    "Expiration": 1792846800,
+    "SecretKey": "fake-secret-key",
+    "SessionToken": "fake-session-token"
+  },
+  "IdentityId": "us-east-1:fake-identity-id"
+}

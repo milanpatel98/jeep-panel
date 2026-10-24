@@ -1,0 +1,36 @@
+{
+  "doors": {
+    "driver": {
+      "status": "LOCKED"
+    },
+    "leftRear": {
+      "status": "LOCKED"
+    },
+    "passenger": {
+      "status": "LOCKED"
+    },
+    "rightRear": {
+      "status": "LOCKED"
+    }
+  },
+  "engine": {
+    "status": "OFF"
+  },
+  "evRunning": {
+    "status": "OFF"
+  },
+  "hvac": {
+    "status": "OFF",
+    "temperature": {
+      "unit": "C",
+      "value": "22"
+    }
+  },
+  "liftGate": {
+    "status": "LOCKED"
+  },
+  "timestamp": 1792843200000,
+  "trunk": {
+    "status": "LOCKED"
+  }
+}

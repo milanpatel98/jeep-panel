@@ -1,0 +1,8 @@
+{
+  "UID": "uid-fake",
+  "errorCode": 0,
+  "sessionInfo": {
+    "login_token": "fake-login-token"
+  },
+  "statusCode": 200
+}

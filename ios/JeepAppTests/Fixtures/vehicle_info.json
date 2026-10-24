@@ -1,0 +1,84 @@
+{
+  "evInfo": {
+    "battery": {
+      "chargingLevel": "DEFAULT",
+      "chargingStatus": "NOT_CHARGING",
+      "distanceToEmpty": {
+        "unit": "km",
+        "value": "40"
+      },
+      "gasRange": "260",
+      "plugInStatus": false,
+      "stateOfCharge": "78",
+      "timeToFullyChargeL1": "600",
+      "timeToFullyChargeL2": "150",
+      "timeToFullyChargeL3": "-1",
+      "totalRange": "300"
+    },
+    "chargePowerPreference": "LEVEL_TWO",
+    "ignitionStatus": "OFF"
+  },
+  "hvac": null,
+  "liftgate": null,
+  "timestamp": 1792843200000,
+  "vehicleInfo": {
+    "batteryInfo": {
+      "batteryStateOfCharge": "GOOD",
+      "batteryVoltage": {
+        "unit": "V",
+        "value": "12.6"
+      }
+    },
+    "daysToService": "120",
+    "distanceToService": {
+      "distanceToService": {
+        "unit": "km",
+        "value": "4000"
+      }
+    },
+    "fuel": {
+      "distanceToEmpty": {
+        "unit": "km",
+        "value": "300"
+      },
+      "fuelAmountLevel": "60",
+      "isFuelLevelLow": "false"
+    },
+    "odometer": {
+      "odometer": {
+        "unit": "km",
+        "value": "12345.6"
+      }
+    },
+    "oilLevel": {
+      "oilLevel": "80"
+    },
+    "tyrePressure": [
+      {
+        "pressure": {
+          "unit": "kPa",
+          "value": "241"
+        },
+        "type": "FL",
+        "warning": "false"
+      },
+      {
+        "pressure": {
+          "unit": "kPa",
+          "value": "238"
+        },
+        "type": "FR",
+        "warning": "false"
+      },
+      {
+        "pressure": {
+          "unit": "kPa",
+          "value": "234"
+        },
+        "type": "RL",
+        "warning": "false"
+      }
+    ]
+  },
+  "windows": null
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "service": "RDL",
+    "serviceEnabled": true,
+    "vehicleCapable": true
+  },
+  {
+    "service": "RDU",
+    "serviceEnabled": true,
+    "vehicleCapable": true
+  },
+  {
+    "service": "HBLF",
+    "serviceEnabled": true,
+    "vehicleCapable": true
+  },
+  {
+    "service": "REON",
+    "serviceEnabled": true,
+    "vehicleCapable": true
+  },
+  {
+    "service": "REOFF",
+    "serviceEnabled": true,
+    "vehicleCapable": true
+  }
+]

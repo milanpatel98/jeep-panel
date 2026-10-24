@@ -1,0 +1,23 @@
+{
+  "creds": {
+    "access": "AKIAFAKEACCESSKEY",
+    "secret": "fake-secret-key",
+    "session": "fake-session-token"
+  },
+  "expected": {
+    "authorization": "AWS4-HMAC-SHA256 Credential=AKIAFAKEACCESSKEY/20261024/us-east-1/execute-api/aws4_request, SignedHeaders=host;x-amz-date;x-amz-security-token, Signature=f456549661d4dd10fd14076f072817a3752a99a0e3c6e318eadc2340eeb498ea",
+    "x_amz_date": "20261024T120000Z"
+  },
+  "now": "2026-10-24T12:00:00Z",
+  "region": "us-east-1",
+  "request": {
+    "body": "",
+    "headers": {
+      "Content-Type": "application/json",
+      "x-api-key": "fake-api-key"
+    },
+    "method": "GET",
+    "url": "https://api.example.invalid/v4/accounts/uid-fake/vehicles/1C4JJXP60RW000000/status?stage=ALL&brand=FAKE&sdp=ALL"
+  },
+  "service": "execute-api"
+}

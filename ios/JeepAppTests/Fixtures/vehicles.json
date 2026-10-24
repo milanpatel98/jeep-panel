@@ -1,0 +1,43 @@
+{
+  "vehicles": [
+    {
+      "fuelType": "PHEV",
+      "make": "Jeep",
+      "modelDescription": "Wrangler 4xe",
+      "nickname": "Test Jeep",
+      "privacyMode": "INACTIVE",
+      "sdp": "ignite",
+      "services": [
+        {
+          "service": "RDL",
+          "serviceEnabled": true,
+          "vehicleCapable": true
+        },
+        {
+          "service": "RDU",
+          "serviceEnabled": true,
+          "vehicleCapable": true
+        },
+        {
+          "service": "HBLF",
+          "serviceEnabled": true,
+          "vehicleCapable": true
+        },
+        {
+          "service": "REON",
+          "serviceEnabled": true,
+          "vehicleCapable": true
+        },
+        {
+          "service": "REOFF",
+          "serviceEnabled": true,
+          "vehicleCapable": true
+        }
+      ],
+      "soldRegion": "US",
+      "vehicleImageURL": "https://example.invalid/jeep.png",
+      "vin": "1C4JJXP60RW000000",
+      "year": "2024"
+    }
+  ]
+}
