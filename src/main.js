@@ -1,7 +1,7 @@
 import './style.css'
 import { createJeep } from './jeep.js'
 import { state, set, subscribe, isNight, attention } from './state.js'
-import { request, isNative } from './native.js'
+import { request, isNative, visibleMessage } from './native.js'
 import { I } from './icons.js'
 
 const $ = (s, el = document) => el.querySelector(s)
@@ -12,6 +12,8 @@ const wide = matchMedia('(min-width: 900px) and (orientation: landscape), (min-w
 const glide = () => (reduced.matches ? 1 : 900)
 const NATIVE = isNative()
 const dash = (v, unit = '') => (v == null ? '—' : v + unit)
+const moving = () => state.gear != null && state.gear !== 'Parked'
+const hasPlace = () => state.location?.lat != null && state.location?.lng != null
 
 // ---------- static glyphs ----------
 $('#i-caret').innerHTML = I.caretDown
@@ -70,6 +72,7 @@ function route() {
 // the small Jeep on the map: lives only while the Location screen is open
 let miniView = null
 let leaflet = null
+let marker = null
 async function ensureMap() {
   if (leaflet) { leaflet.invalidateSize(); return }
   const L = (await import('leaflet')).default
@@ -81,16 +84,16 @@ async function ensureMap() {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(leaflet)
   const icon = L.divIcon({ className: 'jeep-marker', html: '', iconSize: [76, 76], iconAnchor: [38, 38] })
-  const marker = L.marker([lat, lng], { icon, interactive: false }).addTo(leaflet)
+  marker = L.marker([lat, lng], { icon, interactive: false }).addTo(leaflet)
   marker.getElement().appendChild($('#mini'))
 }
 function mini(on) {
-  if (on && !miniView && jeep) {
+  if (on && !miniView && jeep && hasPlace()) {
     ensureMap().then(() => {
       if (miniView || screen() !== 'location') return
       miniView = jeep.miniView($('#mini-canvas'))
       miniView.heading(state.location.heading ?? 0)
-      miniView.spin(state.gear !== 'Parked' && !reduced.matches)
+      miniView.spin(moving() && !reduced.matches)
     })
   }
   if (!on && miniView) { miniView.destroy(); miniView = null }
@@ -177,7 +180,7 @@ setInterval(() => { if (state.night === null) car.setNight(isNight()), render() 
 
 // inside the iPhone app, controls the Jeep can't do are hidden, not greyed
 if (NATIVE) {
-  for (const el of $$('.q[data-q="charge"], .tile[data-t="doors"], .tile[data-t="hood"], .tile[data-t="windows"], .tile[data-t="hazards"], .tile[data-t="doorsOff"], .seg, .hint, .strip-btn[data-c="vent"], #temp-down, #temp-up, #limit')) el.classList.add('hidden')
+  for (const el of $$('.q[data-q="charge"], .tile[data-t="doors"], .tile[data-t="hood"], .tile[data-t="windows"], .tile[data-t="hazards"], .tile[data-t="doorsOff"], .hint, .strip-btn[data-c="vent"], #temp-down, #temp-up, #limit')) el.classList.add('hidden')
 }
 
 // tap targets and labels that ride on the car
@@ -216,14 +219,13 @@ function placeTags() {
 
 // ---------- render: state → screen ----------
 const rangeEl = $('#range'), gearEl = $('#gear'), nightBtn = $('#night'), updatedEl = $('#updated'), nameEl = $('#name')
-let messageUntil = 0, lastMessage = null
 function render() {
   const b = state.battery || {}, c = state.climate || {}
   nameEl.firstChild.textContent = state.name + ' '
   rangeEl.innerHTML = `<span class="batt${b.charging ? ' charging' : ''}" style="--p:${(b.pct ?? 0) / 100}"><i></i></span>${dash(b.miles, ' mi')}`
   const att = attention()
-  const msg = state.message && Date.now() < messageUntil ? state.message : null
-  gearEl.textContent = msg || (att.length ? att.join(' · ') : state.gear)
+  const msg = visibleMessage()
+  gearEl.textContent = msg || (att.length ? att.join(' · ') : dash(state.gear))
   gearEl.classList.toggle('attention', !!msg || att.length > 0)
   updatedEl.textContent = state.updated || ''
   for (const el of [rangeEl, $('#charge'), $('#climate-sub'), $('#row-climate'), $('#odo')]) el.classList.toggle('stale', !!state.offline)
@@ -257,8 +259,9 @@ function render() {
   // rows
   const rc = $('#row-controls'); rc.textContent = att.filter((s) => !/Unlocked|Lights|Hazards/.test(s)).join(' · ') || (state.locked == null ? '—' : state.locked ? 'Locked' : 'Unlocked'); rc.classList.toggle('attention', /open/.test(rc.textContent))
   $('#row-climate').textContent = (c.on ? `On · ${dash(c.target?.toFixed(0), '°')} · ` : '') + `Interior ${dash(c.interior, '°')}`
-  $('#row-location').textContent = state.location.label
-  $('#row-trails').textContent = `Last: ${state.trail.name}, ${state.trail.miles} mi`
+  const loc = state.location || {}, tr = state.trail || {}
+  $('#row-location').textContent = dash(loc.label)
+  $('#row-trails').textContent = tr.name == null ? '—' : `Last: ${tr.name}, ${dash(tr.miles, ' mi')}`
   $('#odo').textContent = dash(state.odometer?.toLocaleString(), ' mi')
 
   // tiles
@@ -282,9 +285,11 @@ function render() {
   for (const k of SEATS) seatEls[k].classList.toggle('on', !!state.heat[k])
 
   // location
-  $('#place').textContent = state.location.label
-  $('#place-sub').textContent = `${state.location.detail} · Parked ${state.location.since}`
-  $('#mini-label').textContent = `${state.location.label} · ${state.gear === 'Parked' ? 'Parked ' + state.location.since : state.gear}`
+  const parked = state.gear === 'Parked' ? 'Parked ' + dash(loc.since) : dash(state.gear)
+  $('#place').textContent = dash(loc.label)
+  $('#place-sub').textContent = [loc.detail, state.gear === 'Parked' && loc.since != null ? 'Parked ' + loc.since : null].filter((v) => v != null).join(' · ') || '—'
+  $('#mini-label').textContent = `${dash(loc.label)} · ${parked}`
+  $('#map').classList.toggle('hidden', !hasPlace())   // no position yet: no map
 
   // labels on the car
   for (const k of ['FL', 'FR', 'BL', 'BR']) { tagEls[k].innerHTML = `${I.doorOpen}Open`; tagEls[k].classList.toggle('show', state.doors[k] && !state.doorsOff); hitEls[k].classList.toggle('on', state.doors[k]) }
@@ -294,13 +299,17 @@ function render() {
 }
 
 subscribe((s, patch) => {
-  // a new message shows in the status line for 4 s (Swift resends the same one with every patch)
-  if ('message' in patch) {
-    if (patch.message && patch.message !== lastMessage) { messageUntil = Date.now() + 4000; setTimeout(render, 4000) }
-    lastMessage = patch.message
-  }
   render()
-  if ('gear' in patch) miniView?.spin(s.gear !== 'Parked' && !reduced.matches)
+  if ('gear' in patch) miniView?.spin(moving() && !reduced.matches)
+  if ('location' in patch && hasPlace()) {
+    if (marker) {
+      // Swift resends the whole patch; only follow the Jeep when it actually moved
+      const ll = [s.location.lat, s.location.lng], at = marker.getLatLng()
+      if (at.lat !== ll[0] || at.lng !== ll[1]) { marker.setLatLng(ll); leaflet.panTo(ll, { animate: false }) }
+      miniView?.heading(s.location.heading ?? 0)
+    }
+    else if (screen() === 'location') mini(true)   // position arrived while on the Location screen
+  }
   if (!jeep) return
   if (patch.doors) for (const k of Object.keys(patch.doors)) jeep.setDoor(k, s.doors[k])
   if ('hood' in patch) jeep.setHood(s.hood)

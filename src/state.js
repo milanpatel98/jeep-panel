@@ -42,6 +42,9 @@ const native = {
   fuel: { miles: null },
   climate: { on: false, target: null, interior: null, exterior: null, vent: false },
   odometer: null,
+  gear: null,
+  location: { label: null, detail: null, since: null, lat: null, lng: null, heading: null },
+  trail: { name: null, miles: null },
 }
 
 export const state = {
@@ -53,6 +56,7 @@ export const state = {
   updated: '',
   offline: false,
   message: null,
+  messageId: 0,
 }
 
 export function set(patch) {

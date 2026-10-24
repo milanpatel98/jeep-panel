@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 
 // a fake WKWebView message handler, installed before anything is imported
@@ -6,7 +6,8 @@ const posted = []
 globalThis.window = { webkit: { messageHandlers: { jeep: { postMessage: (m) => posted.push(m) } } } }
 
 const native = await import('../src/native.js')
-const { state } = await import('../src/state.js')
+const stateModule = await import('../src/state.js')
+const { state } = stateModule
 
 test('readyPostedOnLoad', () => {
   assert.deepEqual(posted[0], { type: 'ready' })
@@ -45,4 +46,48 @@ test('applyPatchesState', () => {
   assert.equal(state.offline, true)
   assert.equal(state.message, 'Jeep didn\'t answer. Try again.')
   assert.equal(state.updated, 'Updated 3 min ago')
+})
+
+test('tapWhilePendingPostsNothing', () => {
+  window.jeepNative.apply({ pending: { lock: true }, supported: ['lock'] })
+  posted.length = 0
+  native.request('lock')
+  native.request('unlock')
+  assert.deepEqual(posted, [])
+  window.jeepNative.apply({ pending: { lock: false } })
+  native.request('lock')
+  assert.deepEqual(posted, [{ type: 'command', action: 'lock' }])
+})
+
+test('sameMessageShowsAgainWhenMessageIdChanges', () => {
+  mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 })
+  try {
+    const text = 'Jeep didn\'t answer. Try again.'
+    window.jeepNative.apply({ message: text, messageId: 1 })
+    assert.equal(native.visibleMessage(), text)
+    mock.timers.tick(4001)
+    assert.equal(native.visibleMessage(), null)
+    // Swift resends the full patch: same text, same id → stays hidden
+    window.jeepNative.apply({ message: text, messageId: 1 })
+    assert.equal(native.visibleMessage(), null)
+    // the same text again as a new message → shown again for 4 s
+    window.jeepNative.apply({ message: text, messageId: 2 })
+    assert.equal(native.visibleMessage(), text)
+    mock.timers.tick(3999)
+    assert.equal(native.visibleMessage(), text)
+    mock.timers.tick(2)
+    assert.equal(native.visibleMessage(), null)
+  } finally { mock.timers.reset() }
+})
+
+test('messageExpiryRedraws', () => {
+  mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 2_000_000 })
+  try {
+    window.jeepNative.apply({ message: 'Hi', messageId: 3 })
+    let redraws = 0
+    const off = stateModule.subscribe(() => redraws++)
+    mock.timers.tick(4001)
+    off()
+    assert.ok(redraws >= 1)
+  } finally { mock.timers.reset() }
 })

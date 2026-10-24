@@ -27,6 +27,17 @@ test('nativeDefaultsAreOff', async () => {
   } finally { delete globalThis.window }
 })
 
+test('nativeDoesNotShowSampleGearLocationTrail', async () => {
+  fakeNative()
+  try {
+    const { state } = await fresh()
+    assert.equal(state.gear, null)
+    assert.deepEqual(state.location, { label: null, detail: null, since: null, lat: null, lng: null, heading: null })
+    assert.deepEqual(state.trail, { name: null, miles: null })
+    assert.equal(state.messageId, 0)
+  } finally { delete globalThis.window }
+})
+
 test('browserDefaultsUnchanged', async () => {
   delete globalThis.window
   const { state } = await fresh()
@@ -37,7 +48,8 @@ test('browserDefaultsUnchanged', async () => {
   assert.deepEqual(state.fuel, { miles: 312 })
   assert.deepEqual(state.climate, { on: false, target: 70, interior: 68, exterior: 54, vent: false })
   assert.equal(state.odometer, 14_212)
-  assert.equal(state.location.label, 'Home')
+  assert.equal(state.gear, 'Parked')
+  assert.deepEqual(state.location, { label: 'Home', detail: 'Golden, CO', since: '2h', lat: 39.7555, lng: -105.2211, heading: 35 })
   assert.equal(state.trail.name, 'Guanella Pass')
 })
 
