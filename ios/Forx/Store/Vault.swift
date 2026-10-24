@@ -5,7 +5,7 @@ import Security
 /// The Uconnect sign-in and the current session, kept in the Keychain as generic-password
 /// items under service `com.milanpatel.Forx`. Readable after the first unlock so the
 /// background refresh can use them. Nothing here is ever logged.
-nonisolated struct Vault: Sendable {
+nonisolated struct Vault: Sendable, VaultProtocol {
     nonisolated enum VaultError: Error, Equatable {
         case keychain(OSStatus)
         case encoding

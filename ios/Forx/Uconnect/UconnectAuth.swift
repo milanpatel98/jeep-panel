@@ -126,7 +126,7 @@ nonisolated enum UconnectHTTP {
 /// Login flow ported from py-uconnect's `auth.py`:
 /// Gigya bootstrap → accounts.login → accounts.getJWT → token exchange → Cognito credentials.
 /// Nothing here is logged: the email, password and every token are secrets.
-nonisolated struct UconnectAuth {
+nonisolated struct UconnectAuth: UconnectAuthProtocol {
     /// Gigya error code for a wrong email or password.
     static let invalidLoginErrorCode = 403042
 

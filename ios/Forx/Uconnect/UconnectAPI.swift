@@ -11,7 +11,7 @@ nonisolated struct VehicleSummary: Sendable, Equatable {
 /// Signed client for the Uconnect vehicle API, ported from py-uconnect's `api.py`
 /// (plus the command polling of `client.py`). Read methods return the raw JSON.
 /// Nothing here is logged: the PIN, tokens, VIN and location are secrets.
-actor UconnectAPI {
+actor UconnectAPI: UconnectAPIProtocol {
     /// `DEFAULT_SDP`: service delivery platform used for PIN auth when the vehicle list has none.
     nonisolated static let defaultSDP = "ignite"
     /// A cached PIN token is renewed this long before it expires.
