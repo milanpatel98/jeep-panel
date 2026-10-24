@@ -8,12 +8,13 @@ struct PanelPatchTests {
     private func snap(
         locked: Bool? = true, range: Int? = 186, ev: Int? = 78, charging: Bool? = false,
         odometer: Int? = 7671, lat: Double? = 0.0, lng: Double? = 0.0,
-        supported: Set<JeepCommand> = [], age: TimeInterval = 0
+        supported: Set<JeepCommand> = [], age: TimeInterval = 0,
+        doorsOpen: [String] = [], tailgate: Bool? = nil, chargeMinutes: Int? = nil
     ) -> JeepSnapshot {
         JeepSnapshot(
-            nickname: nil, locked: locked, doorsOpen: [], tailgateOpen: nil,
+            nickname: nil, locked: locked, doorsOpen: doorsOpen, tailgateOpen: tailgate,
             rangeMiles: range, fuelPercent: nil, evPercent: ev, pluggedIn: nil, charging: charging,
-            chargeMinutesLeft: nil, tiresPsi: [:], odometerMiles: odometer,
+            chargeMinutesLeft: chargeMinutes, tiresPsi: [:], odometerMiles: odometer,
             latitude: lat, longitude: lng, supported: supported,
             updatedAt: now.addingTimeInterval(-age))
     }
@@ -22,7 +23,9 @@ struct PanelPatchTests {
         _ s: JeepSnapshot?, pending: Set<JeepCommand> = [], offline: Bool = false,
         message: String? = nil, messageId: Int = 0
     ) -> [String: Any] {
-        panelPatch(s, pending: pending, offline: offline, message: message, messageId: messageId, now: now)
+        panelPatch(
+            s, pending: pending, offline: offline, message: message, messageId: messageId, now: now,
+            timeZone: TimeZone(identifier: "UTC")!)
     }
 
     @Test func supportedMapsToPanelKeys() {
@@ -95,5 +98,40 @@ struct PanelPatchTests {
         #expect(JSONSerialization.isValidJSONObject(full))
         #expect(JSONSerialization.isValidJSONObject(patch(nil)))
         _ = try JSONSerialization.data(withJSONObject: full)
+    }
+
+    @Test func doorsSentWhenStatusKnown() {
+        let doors = patch(snap(locked: false, doorsOpen: ["passenger"]))["doors"] as? [String: Bool]
+        #expect(doors == ["FL": false, "FR": true, "BL": false, "BR": false])
+        let all = patch(snap(doorsOpen: ["driver", "passenger", "leftRear", "rightRear"]))["doors"] as? [String: Bool]
+        #expect(all == ["FL": true, "FR": true, "BL": true, "BR": true])
+    }
+
+    @Test func doorsOmittedWhenStatusUnknown() {
+        #expect(patch(snap(locked: nil))["doors"] == nil)
+        #expect(patch(nil)["doors"] == nil)
+    }
+
+    @Test func gateFromTailgate() {
+        #expect(patch(snap(tailgate: true))["gate"] as? Bool == true)
+        #expect(patch(snap(tailgate: false))["gate"] as? Bool == false)
+        #expect(patch(snap(tailgate: nil))["gate"] is NSNull)
+        #expect(patch(nil)["gate"] is NSNull)
+    }
+
+    @Test func fullByWhileCharging() {
+        // now is 12:00 UTC; + 150 min = 2:30 PM
+        let charging = patch(snap(charging: true, chargeMinutes: 150))["battery"] as? [String: Any]
+        #expect(charging?["fullBy"] as? String == "2:30 PM")
+        let unknown = patch(snap(charging: true, chargeMinutes: nil))["battery"] as? [String: Any]
+        #expect(unknown?["fullBy"] is NSNull)
+        let idle = patch(snap(charging: false, chargeMinutes: 150))["battery"] as? [String: Any]
+        #expect(idle?["fullBy"] is NSNull)
+        #expect((patch(nil)["battery"] as? [String: Any])?["fullBy"] is NSNull)
+    }
+
+    @Test func patchWithDoorsIsValidJSON() {
+        let p = patch(snap(charging: true, doorsOpen: ["driver"], tailgate: true, chargeMinutes: 30))
+        #expect(JSONSerialization.isValidJSONObject(p))
     }
 }

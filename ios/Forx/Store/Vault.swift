@@ -55,12 +55,19 @@ nonisolated struct Vault: Sendable {
         ]
     }
 
+    /// Update in place, adding only when the item doesn't exist yet, so a failed write
+    /// never loses the old value.
     private func write(_ data: Data, _ account: Account) throws {
-        SecItemDelete(query(account) as CFDictionary)
-        var item = query(account)
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        let status = SecItemAdd(item as CFDictionary, nil)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+        var status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query(account)
+            item.merge(attributes) { _, new in new }
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
         guard status == errSecSuccess else { throw VaultError.keychain(status) }
     }
 
@@ -91,10 +98,12 @@ nonisolated struct LAFaceIDGate: FaceIDGate {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return false }
-        return await withCheckedContinuation { continuation in
+        let ok = await withCheckedContinuation { continuation in
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
                 continuation.resume(returning: ok)
             }
         }
+        withExtendedLifetime(context) {}  // keep the context alive until the prompt is answered
+        return ok
     }
 }
