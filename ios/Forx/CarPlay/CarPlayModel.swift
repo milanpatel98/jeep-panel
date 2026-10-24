@@ -120,7 +120,7 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
             let busy = pending.contains(.lock) || pending.contains(.unlock)
             let unlocked = s?.locked == false
             let state: CarPlayButtonState = busy ? .pending : (unlocked ? .on : .off)
-            let symbol = s?.locked == true ? "lock.fill" : "lock.open.fill"
+            let symbol = s?.locked == false ? "lock.open.fill" : "lock.fill"
             buttons.append(CarPlayButton(kind: .lock, state: state, symbol: symbol))
         }
         if supported.contains(.climateOn) || supported.contains(.climateOff) {
