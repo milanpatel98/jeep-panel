@@ -4,7 +4,8 @@ import SwiftUI
 import UIKit
 
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
-    /// Rebuild this often, so Climate turns off on screen when its 15 minutes run out.
+    /// Rebuild this often, so the Climate map button turns off when its 15 minutes run out
+    /// (`dashboard` also updates the template buttons; nothing else re-reads the clock).
     static let tickInterval: Duration = .seconds(30)
 
     private var interfaceController: CPInterfaceController?
@@ -56,6 +57,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         ticker = nil
         if let motionObserver { NotificationCenter.default.removeObserver(motionObserver) }
         motionObserver = nil
+        window.rootViewController = nil  // frees the 3D Jeep's WebGL context now
         host = nil
         templates = nil
         self.interfaceController = nil
