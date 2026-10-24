@@ -94,51 +94,6 @@ nonisolated func panelCommand(_ action: String) -> JeepCommand? {
     }
 }
 
-// MARK: - Scheme handler
-
-/// Serves `Web/` from the app bundle on `forx://app/`. Anything else is a 404.
-final class WebSchemeHandler: NSObject, WKURLSchemeHandler {
-    private let root: URL?
-
-    init(root: URL?) {
-        self.root = root
-    }
-
-    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
-        guard let url = urlSchemeTask.request.url else {
-            urlSchemeTask.didFailWithError(URLError(.badURL))
-            return
-        }
-        // Local files, memory-mapped: answered in one go, so `stop` never interrupts a response.
-        if let root, let file = WebFiles.fileURL(for: url, root: root),
-           let data = try? Data(contentsOf: file, options: .mappedIfSafe) {
-            respond(urlSchemeTask, url: url, status: 200, data: data,
-                    mime: WebFiles.mimeType(forPath: file.lastPathComponent))
-        } else {
-            respond(urlSchemeTask, url: url, status: 404, data: Data(), mime: "text/plain")
-        }
-    }
-
-    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
-
-    private func respond(_ task: any WKURLSchemeTask, url: URL, status: Int, data: Data, mime: String) {
-        let headers = [
-            "Content-Type": mime,
-            "Content-Length": String(data.count),
-            "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-cache",
-        ]
-        guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)
-        else {
-            task.didFailWithError(URLError(.cannotParseResponse))
-            return
-        }
-        task.didReceive(response)
-        if !data.isEmpty { task.didReceive(data) }
-        task.didFinish()
-    }
-}
-
 // MARK: - Message handler proxy
 
 /// `WKUserContentController` retains its handlers; this keeps only a weak reference to the
@@ -174,9 +129,7 @@ struct PanelWebView: UIViewRepresentable {
         let coordinator = context.coordinator
 
         let config = WKWebViewConfiguration()
-        config.setURLSchemeHandler(
-            WebSchemeHandler(root: Bundle.main.url(forResource: "Web", withExtension: nil)),
-            forURLScheme: WebFiles.scheme)
+        ForxSchemeHandler.install(in: config)
         let content = config.userContentController
         content.add(WeakScriptMessageHandler(coordinator), name: Self.handlerName)
         // The page turns off rubber-banding (overscroll-behavior: none), which would also stop
