@@ -1,17 +1,71 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Jeep</title>
   <style>
-    /* transparent page: the CarPlay panel's black shows through */
+    /* transparent page: the CarPlay panel's colour shows through */
+    :root {
+      --dot: rgba(255, 255, 255, .26);
+      --puck: rgba(28, 28, 30, .92);
+      --puck-edge: rgba(255, 255, 255, .16);
+      --puck-shadow: 0 6px 16px rgba(0, 0, 0, .6);
+      --glyph: #F5F5F7;
+      --label: #F5F5F7;
+    }
+    :root[data-theme="light"] {
+      --dot: rgba(0, 0, 0, .2);
+      --puck: #FFFFFF;
+      --puck-edge: rgba(0, 0, 0, .08);
+      --puck-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+      --glyph: #1C1C1E;
+      --label: #1C1C1E;
+    }
     html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; -webkit-user-select: none; user-select: none; }
     canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+
+    /* the roof strip: a slim dotted track at the Jeep's right, a little Jeep-top thumb at the current step */
+    #strip {
+      --puck-h: 42px; --label-h: 16px;
+      position: absolute; right: 6px; top: 50%; width: 32px; height: min(78%, 230px);
+      transform: translateY(-50%); pointer-events: none;
+      font: 600 10px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    }
+    #strip .track {
+      position: absolute; left: 6px; width: 20px; top: 0; bottom: var(--label-h);
+      background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.3px);
+      background-size: 7px 7px; background-position: center;
+      -webkit-mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
+      mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
+      transition: background-image 300ms ease;
+    }
+    #strip .thumb {
+      position: absolute; left: 0; right: 0; top: 0;
+      transform: translateY(calc(var(--pos, 0) * (min(78vh, 230px) - var(--puck-h) - var(--label-h))));
+      transition: transform 460ms cubic-bezier(.34, 1.32, .64, 1);   /* snaps with a little spring */
+      will-change: transform;
+    }
+    #strip.live .thumb, .reduce #strip .thumb { transition: none; }   /* 1:1 with the finger */
+    #puck {
+      width: 30px; height: var(--puck-h); margin: 0 auto; border-radius: 10px;
+      display: grid; place-items: center; color: var(--glyph); background: var(--puck);
+      box-shadow: inset 0 0 0 1px var(--puck-edge), var(--puck-shadow);
+      transition: background-color 300ms ease, color 300ms ease, box-shadow 300ms ease;
+    }
+    #puck svg { width: 18px; height: 32px; display: block; }
+    #strip-label {
+      position: absolute; left: 50%; top: calc(var(--puck-h) + 4px); transform: translateX(-50%);
+      white-space: nowrap; color: var(--label); letter-spacing: -.01em; transition: color 300ms ease;
+    }
   </style>
 </head>
 <body>
   <canvas id="c"></canvas>
+  <div id="strip" aria-hidden="true">
+    <div class="track"></div>
+    <div class="thumb"><div id="puck"></div><div id="strip-label"></div></div>
+  </div>
   <script type="module" src="/src/embed.js"></script>
 </body>
 </html>
