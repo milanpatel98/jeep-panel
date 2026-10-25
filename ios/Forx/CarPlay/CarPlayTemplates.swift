@@ -98,6 +98,12 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         false
     }
 
+    /// iOS 26.4+ route sharing: Forx shares no routes. Declared as a plain @objc method so it
+    /// builds whether or not the SDK in use already lists it in CPMapTemplateDelegate.
+    @objc func mapTemplateShouldProvideRouteSharing(_ mapTemplate: CPMapTemplate) -> Bool {
+        false
+    }
+
     // MARK: Model → templates
 
     /// Updates the map template in place, and any More or Settings list on screen. Only what
