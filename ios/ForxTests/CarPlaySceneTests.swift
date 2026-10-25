@@ -143,16 +143,84 @@ struct CarPlaySceneTests {
         let list = try #require(fake.pushed.last as? CPListTemplate)
         let items = list.sections.flatMap(\.items).compactMap { $0 as? CPListItem }
         #expect(items.map(\.text) == [
-            "Tires", "Charging", "Top on", "Panels off", "Top off", "Horn", "Tailgate", "Trip",
+            "Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Horn", "Tailgate", "Trip",
         ])
         let tappable = items.filter { $0.handler != nil }
-        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Horn", "Tailgate"])
+        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Doors off", "Horn", "Tailgate"])
         for item in tappable {
             item.handler?(item) { rec.completions += 1 }
         }
         #expect(rec.completions == tappable.count)
-        #expect(rec.roofs == ["on", "panels", "off"])
+        #expect(rec.roofs == ["on", "panels", "off", "doorsOff"])
         #expect(rec.commands == [.horn, .gate])
+    }
+
+    @Test func trayModeSwapsMapButtonsToFavourites() {
+        let fake = FakeCarPlayInterface()
+        let t = make(fake, Recorder())
+        t.update(model(snap()))
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
+        t.toggleTray()
+        #expect(t.tray.isOpen)
+        #expect(t.shownButtons.isEmpty)
+        #expect(t.shownApps.map(\.title) == ["YouTube Music", "Spotify", "Apple Music", "Apple Maps"])
+        #expect(t.mapTemplate.mapButtons.count == 4)
+        // "All apps" joins Search on the leading side
+        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 2)
+        // The same state again reassigns nothing.
+        let before = t.mapTemplate.mapButtons
+        t.update(model(snap()))
+        #expect(t.mapTemplate.mapButtons.first === before.first)
+        // Closing brings the command buttons back.
+        t.toggleTray()
+        #expect(!t.tray.isOpen)
+        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .lights, .more])
+        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
+    }
+
+    @Test func favouriteTapOpensURLAndClosesTray() {
+        let rec = Recorder()
+        let t = make(FakeCarPlayInterface(), rec)
+        t.update(model(snap()))
+        t.toggleTray()
+        t.tapApp(1)
+        #expect(rec.urls == [URL(string: "spotify://")!])
+        #expect(!t.tray.isOpen)
+        #expect(t.shownApps.isEmpty)
+        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .lights, .more])
+    }
+
+    @Test func commandClosesTray() {
+        let rec = Recorder()
+        let t = make(FakeCarPlayInterface(), rec)
+        t.update(model(snap()))
+        t.tray.open()
+        t.tap(.lock)
+        #expect(!t.tray.isOpen)
+        #expect(rec.commands == [.unlock])
+    }
+
+    @Test func allAppsPushesGrid() throws {
+        let fake = FakeCarPlayInterface()
+        let t = make(fake, Recorder())
+        t.update(model(snap()))
+        t.toggleTray()
+        t.showApps()
+        let grid = try #require(fake.pushed.last as? CPGridTemplate)
+        #expect(grid.gridButtons.count == 8)
+        #expect(grid.gridButtons.map { $0.titleVariants.first ?? "" } == CarPlayModel.appList.map(\.title))
+    }
+
+    @Test func appearanceRedrawsTiles() {
+        let t = make(FakeCarPlayInterface(), Recorder())
+        let m = model(snap())
+        t.update(m, dark: true)
+        let night = t.mapTemplate.mapButtons.first
+        t.update(m, dark: true)
+        #expect(t.mapTemplate.mapButtons.first === night)
+        t.update(m, dark: false)
+        #expect(t.mapTemplate.mapButtons.first !== night)
+        #expect(t.mapTemplate.mapButtons.count == 4)
     }
 
     @Test func reconnectBuildsOnce() {

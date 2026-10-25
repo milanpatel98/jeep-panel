@@ -36,12 +36,27 @@ enum CarPlayDebug {
 }
 
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the
-/// More list, the Apps grid and Settings, pushed on tap.
+/// More list, the Apps grid and Settings, pushed on tap. The Apps button opens the tray: the
+/// map buttons become the four favourite apps until one opens, a command runs, or 8 s pass.
+/// Drags on the map go to the 3D Jeep (`spin`).
 @MainActor
 final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     let mapTemplate = CPMapTemplate()
-    /// The map buttons now shown, left to right (mirrors `mapTemplate.mapButtons`).
+    /// The map buttons now shown, left to right (mirrors `mapTemplate.mapButtons`); empty while
+    /// the tray shows its apps instead.
     private(set) var shownButtons: [CarPlayButton] = []
+    /// The apps on the map buttons while the tray is open.
+    private(set) var shownApps: [CarPlayApp] = []
+    let tray: AppTray
+    let spin: DashboardSpin?
+    /// What the map buttons were last drawn for, so an unchanged state reassigns nothing.
+    private var mapKey: MapKey?
+
+    private struct MapKey: Equatable {
+        let buttons: [CarPlayButton]
+        let dark: Bool
+        let trayOpen: Bool
+    }
 
     private let interface: any CarPlayInterface
     private let open: (URL) -> Void
@@ -50,7 +65,12 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private let email: () -> String?
     private var model: CarPlayModel?
     /// What the bar buttons were last built for (nil: not yet).
-    private var barsSignedIn: Bool?
+    private var barsKey: BarsKey?
+
+    private struct BarsKey: Equatable {
+        let signedIn: Bool
+        let trayOpen: Bool
+    }
     /// The rows / settings the on-screen lists were last filled with.
     private var moreListRows: [CarPlayRow] = []
     private var settingsListKey: SettingsKey?
@@ -72,11 +92,15 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         open: @escaping (URL) -> Void,
         perform: @escaping (JeepCommand) -> Void,
         setRoof: @escaping (String) -> Void = { AppModel.roof = $0 },
-        email: @escaping () -> String? = { AppModel.store.email }
+        email: @escaping () -> String? = { AppModel.store.email },
+        tray: AppTray = AppTray(),
+        spin: DashboardSpin? = nil
     ) {
         self.interface = interface
         self.open = open
         self.perform = perform
+        self.tray = tray
+        self.spin = spin
         self.setRoof = setRoof
         self.email = email
         super.init()
@@ -104,21 +128,55 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         false
     }
 
+    // MARK: Drags → 3D Jeep
+
+    /// CarPlay sends these on touch screens without panning mode; the map never pans.
+    func mapTemplateDidBeginPanGesture(_ mapTemplate: CPMapTemplate) {
+        spin?.began()
+    }
+
+    func mapTemplate(
+        _ mapTemplate: CPMapTemplate, didUpdatePanGestureWithTranslation translation: CGPoint, velocity: CGPoint
+    ) {
+        spin?.changed(translation)
+    }
+
+    func mapTemplate(_ mapTemplate: CPMapTemplate, didEndPanGestureWithVelocity velocity: CGPoint) {
+        spin?.ended(velocity)
+    }
+
     // MARK: Model → templates
 
     /// Updates the map template in place, and any More or Settings list on screen. Only what
-    /// changed is reassigned, so nothing flickers.
-    func update(_ model: CarPlayModel) {
+    /// changed is reassigned, so nothing flickers. `dark` is CarPlay's appearance (the tiles'
+    /// colours). Reads `tray.isOpen`, so a caller under observation rebuilds when it changes.
+    func update(_ model: CarPlayModel, dark: Bool = true) {
         self.model = model
+        let trayOpen = model.signedIn && tray.isOpen
+        if !model.signedIn && tray.isOpen { tray.close() }
         let buttons = model.signedIn ? Array(model.buttons.prefix(Self.maxMapButtons)) : []
-        if buttons != shownButtons {
-            shownButtons = buttons
-            if !CarPlayDebug.skipMapButtons { mapTemplate.mapButtons = buttons.map(mapButton) }
+        let key = MapKey(buttons: buttons, dark: dark, trayOpen: trayOpen)
+        if key != mapKey {
+            mapKey = key
+            if trayOpen {
+                shownButtons = []
+                shownApps = CarPlayModel.favouriteApps
+                if !CarPlayDebug.skipMapButtons {
+                    mapTemplate.mapButtons = shownApps.indices.map { appButton($0, dark: dark) }
+                }
+            } else {
+                shownApps = []
+                shownButtons = buttons
+                if !CarPlayDebug.skipMapButtons {
+                    mapTemplate.mapButtons = buttons.map { mapButton($0, dark: dark) }
+                }
+            }
         }
 
-        if model.signedIn != barsSignedIn {
-            barsSignedIn = model.signedIn
-            setBarButtons(signedIn: model.signedIn)
+        let bars = BarsKey(signedIn: model.signedIn, trayOpen: trayOpen)
+        if bars != barsKey {
+            barsKey = bars
+            setBarButtons(bars)
         }
 
         if let list = moreList, model.more != moreListRows {
@@ -134,14 +192,18 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }
     }
 
-    private func setBarButtons(signedIn: Bool) {
+    private func setBarButtons(_ key: BarsKey) {
         if CarPlayDebug.skipBarButtons { return }
-        if signedIn {
-            mapTemplate.leadingNavigationBarButtons = [
-                barButton("magnifyingglass") { $0.tapSearch() },
-            ]
+        if key.signedIn {
+            var leading = [barButton("magnifyingglass") { $0.tapSearch() }]
+            // In tray mode: the full grid of apps, one tap away.
+            if key.trayOpen {
+                leading.append(CPBarButton(title: "All apps") { [weak self] _ in self?.showApps() })
+            }
+            mapTemplate.leadingNavigationBarButtons = leading
             mapTemplate.trailingNavigationBarButtons = [
-                barButton("square.grid.3x3.fill") { $0.showApps() },
+                // filled while the tray is open
+                barButton(key.trayOpen ? "square.grid.3x3.fill" : "square.grid.3x3") { $0.toggleTray() },
                 barButton("gearshape.fill") { $0.showSettings() },
             ]
         } else {
@@ -158,6 +220,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         guard let button = shownButtons.first(where: { $0.kind == kind }) else { return }
         // A pending button waits for the Jeep; taps do nothing.
         guard button.state != .pending else { return }
+        tray.close()
         switch kind {
         case .lock:
             // Unlock only when known locked; unknown or unlocked locks.
@@ -169,6 +232,21 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         case .more:
             showMore()
         }
+    }
+
+    /// Opens or closes the Apps tray; the next `update` swaps the map buttons.
+    func toggleTray() {
+        tray.toggle()
+        if let model { update(model, dark: mapKey?.dark ?? true) }
+    }
+
+    /// A favourite app on the map buttons (tray mode): opens it and closes the tray.
+    func tapApp(_ index: Int) {
+        guard shownApps.indices.contains(index) else { return }
+        let url = shownApps[index].url
+        tray.close()
+        if let model { update(model, dark: mapKey?.dark ?? true) }
+        open(url)
     }
 
     func tapSearch() {
@@ -184,11 +262,12 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         interface.push(list)
     }
 
+    /// The full grid, with the apps' real icons.
     func showApps() {
         let apps = model?.apps ?? CarPlayModel.appList
+        let dark = mapKey?.dark ?? true
         let buttons = apps.prefix(Self.maxGridButtons).map { app in
-            let image = (UIImage(systemName: app.symbol) ?? UIImage())
-                .withTintColor(.white, renderingMode: .alwaysOriginal)
+            let image = AppIconArt.image(app, side: Self.gridIcon, circle: false, dark: dark)
             let url = app.url
             return CPGridButton(titleVariants: [app.title], image: image) { [weak self] _ in
                 self?.open(url)
@@ -219,6 +298,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
                 }
             } else if let cmd = row.action {
                 item.handler = { [weak self] _, completion in
+                    self?.tray.close()
                     self?.perform(cmd)
                     completion()
                 }
@@ -249,10 +329,20 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     // MARK: Buttons
 
-    private func mapButton(_ b: CarPlayButton) -> CPMapButton {
+    static let gridIcon: CGFloat = 54
+    static let tileSide: CGFloat = 44
+
+    private func mapButton(_ b: CarPlayButton, dark: Bool) -> CPMapButton {
         let kind = b.kind
         let button = CPMapButton { [weak self] _ in self?.tap(kind) }
-        button.image = Self.tile(symbol: b.symbol, state: b.state)
+        button.image = Self.tile(symbol: b.symbol, state: b.state, dark: dark)
+        return button
+    }
+
+    /// A favourite app as a round map button: its real icon clipped to a circle.
+    private func appButton(_ index: Int, dark: Bool) -> CPMapButton {
+        let button = CPMapButton { [weak self] _ in self?.tapApp(index) }
+        button.image = AppIconArt.image(shownApps[index], side: Self.tileSide, circle: true, dark: dark)
         return button
     }
 
@@ -264,35 +354,68 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }
     }
 
-    /// A 44 pt round tile. Off: white glyph on #1C1C1E. On: black glyph on #F5F5F7.
-    /// Pending: 50% white glyph on #1C1C1E. Static: map button images don't animate.
-    static func tile(symbol: String, state: CarPlayButtonState) -> UIImage {
-        let side: CGFloat = 44
+    /// A 44 pt round tile, drawn at 3x; the glyph is the SF Symbol at 20 pt semibold.
+    /// Night off: white on #2C2C2E with a 1 pt white 8% inner edge. Day off: #1C1C1E on white
+    /// with a black 8% edge and a soft shadow. On (both): white on #0A84FF. Pending: the off
+    /// tile with the glyph at 45%. Static: map button images don't animate.
+    static func tile(symbol: String, state: CarPlayButtonState, dark: Bool = true) -> UIImage {
+        let side = tileSide
+        // day: a little room around the circle for its shadow
+        let pad: CGFloat = dark ? 0 : 2
+        let canvas = side + 2 * pad
+        let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
+        let offTile = dark ? UIColor(red: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255, alpha: 1) : UIColor.white
+        let offGlyph = dark ? UIColor.white : ink
+        let edge = dark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08)
+
         let background: UIColor
         let glyph: UIColor
+        var stroke: UIColor? = edge
+        var shadow = !dark
         switch state {
         case .off:
-            background = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
-            glyph = .white
+            background = offTile
+            glyph = offGlyph
         case .on:
-            background = UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
-            glyph = .black
+            background = UIColor(red: 0x0A / 255, green: 0x84 / 255, blue: 1, alpha: 1)
+            glyph = .white
+            stroke = nil
+            shadow = false
         case .pending:
-            background = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
-            glyph = UIColor.white.withAlphaComponent(0.5)
+            background = offTile
+            glyph = offGlyph.withAlphaComponent(0.45)
         }
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+
+        let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
         let symbolImage = UIImage(systemName: symbol, withConfiguration: config)?
             .withTintColor(glyph, renderingMode: .alwaysOriginal)
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
-        return renderer.image { _ in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: canvas, height: canvas), format: format)
+        let image = renderer.image { context in
+            let circle = CGRect(x: pad, y: pad, width: side, height: side)
+            let cg = context.cgContext
+            if shadow {
+                cg.saveGState()
+                cg.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: UIColor.black.withAlphaComponent(0.12).cgColor)
+                background.setFill()
+                UIBezierPath(ovalIn: circle).fill()
+                cg.restoreGState()
+            }
             background.setFill()
-            UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: side, height: side)).fill()
+            UIBezierPath(ovalIn: circle).fill()
+            if let stroke {
+                stroke.setStroke()
+                let ring = UIBezierPath(ovalIn: circle.insetBy(dx: 0.5, dy: 0.5))
+                ring.lineWidth = 1
+                ring.stroke()
+            }
             if let symbolImage {
                 let s = symbolImage.size
                 symbolImage.draw(in: CGRect(
-                    x: (side - s.width) / 2, y: (side - s.height) / 2, width: s.width, height: s.height))
+                    x: pad + (side - s.width) / 2, y: pad + (side - s.height) / 2, width: s.width, height: s.height))
             }
         }
+        return image.withRenderingMode(.alwaysOriginal)
     }
 }

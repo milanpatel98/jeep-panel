@@ -42,9 +42,11 @@ struct CarPlayModelTests {
         let m = model(snap())
         #expect(m.signedIn)
         #expect(m.name == "Milan")
-        #expect(m.subtitle == "78% · 186 mi · Parked")
-        #expect(m.status == "Locked · all doors closed")
-        #expect(m.statusKnown)
+        #expect(m.rangeText == "186")
+        #expect(m.evText == "78%")
+        #expect(m.statusWord == "Locked")
+        #expect(m.statusSymbol == "lock.fill")
+        #expect(m.statusTint == .green)
         #expect(m.buttons.map(\.kind) == [.lock, .climate, .lights, .more])
         #expect(button(m, .lock)?.symbol == "lock.fill")
         #expect(button(m, .lock)?.state == .off)
@@ -82,16 +84,17 @@ struct CarPlayModelTests {
         let titles = m.more.map(\.title)
         #expect(!titles.contains("Horn"))
         #expect(!titles.contains("Tailgate"))
-        #expect(titles == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Trip"])
-        #expect(m.more.filter(\.roof).map(\.title) == ["Top on", "Panels off", "Top off"])
-        #expect(m.more.compactMap(\.roofKey) == ["on", "panels", "off"])
+        #expect(titles == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Trip"])
+        #expect(m.more.filter(\.roof).map(\.title) == ["Top on", "Panels off", "Top off", "Doors off"])
+        #expect(m.more.compactMap(\.roofKey) == ["on", "panels", "off", "doorsOff"])
+        #expect(m.more.compactMap(\.roofKey) == CarPlayModel.roofSteps)
         #expect(m.more.filter { !$0.roof }.allSatisfy { $0.roofKey == nil })
         #expect(m.buttons.first { $0.kind == .lock }?.isLocked == true)
         #expect(model(snap(locked: nil)).buttons.first { $0.kind == .lock }?.isLocked == nil)
 
         let all = model(snap())
         #expect(all.more.map(\.title)
-            == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Horn", "Tailgate", "Trip"])
+            == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Horn", "Tailgate", "Trip"])
         #expect(row(all, "Horn")?.action == .horn)
         #expect(row(all, "Tailgate")?.action == .gate)
 
@@ -103,39 +106,55 @@ struct CarPlayModelTests {
         #expect(row(none, "Tires")?.detail == "FL — · FR — · RL — · RR —")
     }
 
-    @Test func subtitleCopy() {
-        #expect(model(snap(range: 186, ev: 78)).subtitle == "78% · 186 mi · Parked")
-        #expect(model(snap(ignition: nil)).subtitle == "78% · 186 mi · Parked")
-        #expect(model(snap(ignition: true)).subtitle == "78% · 186 mi · Driving")
-        #expect(model(nil).subtitle == "— · — mi · Parked")
+    @Test func headerCopy() {
+        #expect(model(snap(range: 186, ev: 78)).rangeText == "186")
+        #expect(model(snap(range: 186, ev: 78)).evText == "78%")
+        // Driving or parked: no words for it.
+        #expect(model(snap(ignition: true)).rangeText == "186")
+        // Unknown: "—" for the number only; no battery.
+        #expect(model(nil).rangeText == "—")
+        #expect(model(nil).evText == nil)
+        #expect(model(snap(range: nil, ev: nil)).rangeText == "—")
+        #expect(model(snap(range: nil, ev: nil)).evText == nil)
     }
 
     @Test func appsOrderAndCap() {
         let m = model(snap())
         #expect(m.apps.count == 8)
         #expect(m.apps.map(\.url.absoluteString) == [
-            "youtubemusic://", "spotify://", "music://", "podcasts://",
-            "maps://", "comgooglemaps://", "waze://", "tel://",
+            "youtubemusic://", "spotify://", "music://", "maps://",
+            "podcasts://", "comgooglemaps://", "waze://", "tel://",
         ])
         #expect(m.apps.map(\.title) == [
-            "YouTube Music", "Spotify", "Apple Music", "Podcasts",
-            "Apple Maps", "Google Maps", "Waze", "Phone",
+            "YouTube Music", "Spotify", "Apple Music", "Apple Maps",
+            "Podcasts", "Google Maps", "Waze", "Phone",
+        ])
+        #expect(CarPlayModel.favouriteApps.map(\.title) == ["YouTube Music", "Spotify", "Apple Music", "Apple Maps"])
+        #expect(m.apps.map(\.icon) == [
+            "appicon-youtubemusic", "appicon-spotify", "appicon-applemusic", "appicon-applemaps",
+            "appicon-podcasts", "appicon-googlemaps", "appicon-waze", "appicon-phone",
         ])
     }
 
     @Test func statusCopy() {
-        #expect(model(snap(locked: false)).status == "Unlocked")
-        #expect(model(snap(doorsOpen: ["driver"])).status == "Driver door open")
-        #expect(model(snap(doorsOpen: ["driver", "rightRear"])).status
-            == "Driver door, Rear right door open")
-        #expect(model(snap(doorsOpen: ["driver", "passenger", "leftRear", "rightRear"])).status
-            == "All doors open")
-        #expect(model(snap(locked: false, doorsOpen: ["passenger"], tailgate: true)).status
-            == "Passenger door open · Tailgate open · Unlocked")
+        let unlocked = model(snap(locked: false))
+        #expect(unlocked.statusWord == "Unlocked")
+        #expect(unlocked.statusSymbol == "lock.open.fill")
+        #expect(unlocked.statusTint == .amber)
+        let door = model(snap(doorsOpen: ["driver"]))
+        #expect(door.statusWord == "Door open")
+        #expect(door.statusTint == .amber)
+        #expect(model(snap(doorsOpen: ["driver", "rightRear"])).statusWord == "Door open")
+        #expect(model(snap(tailgate: true)).statusWord == "Tailgate open")
+        // An open door wins over the tailgate and the lock.
+        #expect(model(snap(locked: false, doorsOpen: ["passenger"], tailgate: true)).statusWord == "Door open")
+        #expect(model(snap(locked: false, tailgate: true)).statusWord == "Tailgate open")
+        // Unknown shows nothing.
         let unknown = model(snap(locked: nil))
-        #expect(unknown.status == "—")
-        #expect(!unknown.statusKnown)
-        #expect(!model(nil).statusKnown)
+        #expect(unknown.statusWord == nil)
+        #expect(unknown.statusSymbol == nil)
+        #expect(unknown.statusTint == nil)
+        #expect(model(nil).statusWord == nil)
     }
 
     @Test func lockSymbolAndState() {
@@ -155,6 +174,8 @@ struct CarPlayModelTests {
         #expect(row(m, "Top on")?.detail == "")
         #expect(row(m, "Panels off")?.detail == "✓")
         #expect(row(m, "Top off")?.detail == "")
+        #expect(row(m, "Doors off")?.detail == "")
+        #expect(row(model(snap(), roof: "doorsOff"), "Doors off")?.detail == "✓")
         #expect(m.more.filter(\.roof).allSatisfy { $0.action == nil })
 
         // now is 2026-10-24 12:00 UTC; 130 min → 2:10 PM.

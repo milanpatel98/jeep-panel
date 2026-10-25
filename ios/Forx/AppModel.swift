@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// The roof state shown on the 3D Jeep: "on", "panels" or "off". Persisted in UserDefaults "roof".
+/// The roof state shown on the 3D Jeep: "on", "panels", "off" or "doorsOff" (top and doors off). Persisted in UserDefaults "roof".
 @Observable
 final class RoofSetting {
     static let shared = RoofSetting()
@@ -14,7 +14,7 @@ final class RoofSetting {
         }
     }
 
-    private static let valid: Set<String> = ["on", "panels", "off"]
+    private static let valid: Set<String> = ["on", "panels", "off", "doorsOff"]
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.key)

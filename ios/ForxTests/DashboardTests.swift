@@ -1,55 +1,56 @@
 import CoreGraphics
 import CoreLocation
 import Foundation
+import SwiftUI
 import Testing
 @testable import Forx
 
 struct DashboardLayoutTests {
-    @Test func widescreenSplitsTwentyFiveSeventyFive() {
-        let l = DashboardLayout(size: CGSize(width: 640, height: 240))  // 1920×720 @3x
-        #expect(l.panelWidth == 160)
-        #expect(l.card == CGRect(x: 160, y: 12, width: 468, height: 216))
-        #expect(abs(l.u - 240.0 / 628) < 0.0001)  // height is the tighter side
-        #expect(l.shortSubtitle)
+    @Test func panelTakesThirtyFivePercent() {
+        let l = DashboardLayout(size: CGSize(width: 960, height: 360))
+        #expect(l.panelWidth == 336)
+        #expect(l.card == CGRect(x: 336, y: 12, width: 612, height: 336))
         #expect(l.showsBattery)
+        #expect(l.padLeft == 20)
     }
 
-    @Test func smallScreenScalesByPanelWidth() {
-        let l = DashboardLayout(size: CGSize(width: 400, height: 240))  // 800×480 @2x
-        #expect(l.panelWidth == 100)
-        #expect(abs(l.u - 100.0 / 380) < 0.0001)
-        #expect(l.shortSubtitle)
-        #expect(!l.showsBattery)
+    @Test func designSizeHeader() {
+        let l = DashboardLayout(size: CGSize(width: 960, height: 360))
+        #expect(l.nameFont == 13)
+        #expect(l.heroFont == 30)
+        #expect(l.unitFont == 15)
+        #expect(l.batteryFont == 13)
+        #expect(l.headerTop == 16)
+        #expect(l.headerBottom == 16 + 16 + 2 + 35)
     }
 
-    @Test func typeStaysBetweenFloorAndMockup() {
-        let small = DashboardLayout(size: CGSize(width: 400, height: 240))
-        #expect(small.nameFont == 15)
-        #expect(small.subFont == 11)
+    @Test func jeepFillsFromHeaderToStatus() {
+        let l = DashboardLayout(size: CGSize(width: 960, height: 360))
+        #expect(l.jeep.minY == l.headerBottom + 2)
+        #expect(l.jeep.maxY == l.statusY - l.statusLineHeight / 2 - 2)
+        #expect(l.jeep.minX == -10)
+        #expect(l.jeep.maxX == l.panelWidth)  // the roof strip sits at the panel's right edge
+        #expect(abs(l.statusY + l.statusLineHeight / 2 - (360 - 16)) < 0.0001)
+    }
+
+    @Test func typeShrinksToAFloorOnShortWindows() {
+        let small = DashboardLayout(size: CGSize(width: 640, height: 240))
+        #expect(small.nameFont == 11)
+        #expect(small.heroFont == 24)
+        #expect(small.unitFont == 12)
         #expect(small.statusFont == 11)
-        let big = DashboardLayout(size: CGSize(width: 3040, height: 1256))  // twice the mockup
-        #expect(big.nameFont == 19)
-        #expect(big.subFont == 13.5)
-        #expect(big.statusFont == 13)
+        let big = DashboardLayout(size: CGSize(width: 1920, height: 720))
+        #expect(big.heroFont == 30)
+        #expect(big.nameFont == 13)
     }
 
-    @Test func mockupSizeIsOneToOne() {
-        let l = DashboardLayout(size: CGSize(width: 1520, height: 628))
-        #expect(l.panelWidth == 380)
-        #expect(l.u == 1)
-        #expect(l.avatar == 40)
-        #expect(l.nameFont == 19)
-        #expect(l.headerBottom == 60)
-        #expect(l.jeep.minY == 70)  // the mockup's car top
-        #expect(l.jeep.minX == -14)
-        #expect(l.jeep.width == 408)
-        #expect(abs(l.statusY + l.statusLineHeight / 2 - (628 - 22)) < 0.0001)
-        #expect(!l.shortSubtitle)
-        #expect(l.subtitle("62% · 186 mi · Parked") == "62% · 186 mi · Parked")
+    @Test func narrowPanelDropsTheBattery() {
+        #expect(!DashboardLayout(size: CGSize(width: 400, height: 240)).showsBattery)
+        #expect(DashboardLayout(size: CGSize(width: 640, height: 240)).showsBattery)
     }
 
     @Test func partsStayInOrderTopToBottom() {
-        for size in [CGSize(width: 640, height: 240), CGSize(width: 400, height: 240), CGSize(width: 800, height: 480)] {
+        for size in [CGSize(width: 640, height: 240), CGSize(width: 400, height: 240), CGSize(width: 960, height: 360), CGSize(width: 800, height: 480)] {
             let l = DashboardLayout(size: size)
             #expect(l.headerBottom < l.jeep.minY)
             #expect(l.jeep.maxY < l.statusY - l.statusLineHeight / 2)
@@ -57,23 +58,25 @@ struct DashboardLayoutTests {
         }
     }
 
-    @Test func narrowPanelDropsParked() {
-        let l = DashboardLayout(size: CGSize(width: 640, height: 240))
-        #expect(l.subtitle("62% · 186 mi · Parked") == "62% · 186 mi")
-        #expect(l.subtitle("— · — mi · Driving") == "— · — mi")
-    }
-
     @Test func globeOverflowsBottomRightAndKeepsTheLabelInside() {
-        let l = DashboardLayout(size: CGSize(width: 640, height: 240))
+        let l = DashboardLayout(size: CGSize(width: 640, height: 240))  // card 404 × 216
         #expect(l.globeDiameter == 324)
         let m = l.mapFrame
         #expect(abs(m.minX) < 0.0001 && abs(m.minY) < 0.0001)
         #expect(m.maxX >= l.card.width && m.maxY >= l.card.height)
         #expect(abs(l.mapMargins.bottom - (m.maxY - 216)) < 0.0001)
-        #expect(abs(l.mapMargins.trailing - (m.maxX - 468)) < 0.0001)
+        #expect(abs(l.mapMargins.trailing - (m.maxX - 404)) < 0.0001)
         #expect(l.mapMargins.top == 0 && l.mapMargins.leading == 0)
         #expect(l.dotSize == 8)
         #expect(DashboardLayout(size: CGSize(width: 1520, height: 628)).dotSize == 10)
+    }
+
+    @Test func themeColours() {
+        #expect(DashboardTheme(dark: true).background == .black)
+        #expect(DashboardTheme(dark: false).background == Color(hex: 0xF5F5F7))
+        #expect(DashboardTheme(dark: false).card == .white)
+        #expect(DashboardTheme(dark: false).text == Color(hex: 0x1C1C1E))
+        #expect(DashboardTheme(dark: false).secondary == Color(hex: 0x6E6E73))
     }
 
     @Test func batteryStepsAndColour() {
@@ -119,13 +122,24 @@ struct JeepEmbedStateTests {
             snapshot: snap(locked: true, doorsOpen: ["driver", "rightRear"], tailgate: true),
             roof: "panels", reducedMotion: true)
         #expect(JeepEmbedState.json(state)
-            == #"{"doors":{"BL":false,"BR":true,"FL":true,"FR":false},"gate":true,"lights":false,"locked":true,"reducedMotion":true,"roof":"panels"}"#)
+            == #"{"doors":{"BL":false,"BR":true,"FL":true,"FR":false},"doorsOff":false,"gate":true,"lights":false,"locked":true,"reducedMotion":true,"roof":"panels","theme":"dark"}"#)
     }
 
     @Test func unknownJeepLeavesLockedOut() {
         let state = JeepEmbedState.make(snapshot: nil, roof: "on", reducedMotion: false)
         #expect(state["locked"] == nil)
         #expect(JeepEmbedState.json(state)
-            == #"{"doors":{"BL":false,"BR":false,"FL":false,"FR":false},"gate":false,"lights":false,"reducedMotion":false,"roof":"on"}"#)
+            == #"{"doors":{"BL":false,"BR":false,"FL":false,"FR":false},"doorsOff":false,"gate":false,"lights":false,"reducedMotion":false,"roof":"on","theme":"dark"}"#)
+    }
+
+    @Test func doorsOffIsTopOffWithoutDoors() {
+        let state = JeepEmbedState.make(snapshot: nil, roof: "doorsOff", reducedMotion: false)
+        #expect(state["roof"] as? String == "off")
+        #expect(state["doorsOff"] as? Bool == true)
+    }
+
+    @Test func dayGivesTheLightTheme() {
+        let state = JeepEmbedState.make(snapshot: nil, roof: "on", reducedMotion: false, dark: false)
+        #expect(state["theme"] as? String == "light")
     }
 }

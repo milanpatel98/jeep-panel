@@ -9,7 +9,8 @@ import WebKit
 nonisolated enum JeepEmbedState {
     /// Doors map like the phone patch: driver = FL, passenger = FR, rear left = BL, rear right = BR.
     /// Lights are always off here (the headlight flash is momentary). `locked` only when known.
-    static func make(snapshot s: JeepSnapshot?, roof: String, reducedMotion: Bool) -> [String: Any] {
+    /// Roof "doorsOff" is the top off with the doors off too. `dark` picks the page's night or day studio.
+    static func make(snapshot s: JeepSnapshot?, roof: String, reducedMotion: Bool, dark: Bool = true) -> [String: Any] {
         let open = Set(s?.doorsOpen ?? [])
         let doors: [String: Bool] = [
             "FL": open.contains("driver"),
@@ -19,7 +20,9 @@ nonisolated enum JeepEmbedState {
         ]
         var state: [String: Any] = [
             "lights": false,
-            "roof": roof,
+            "roof": roof == "doorsOff" ? "off" : roof,
+            "doorsOff": roof == "doorsOff",
+            "theme": dark ? "dark" : "light",
             "doors": doors,
             "gate": s?.tailgateOpen == true,
             "reducedMotion": reducedMotion,
@@ -39,13 +42,14 @@ nonisolated enum JeepEmbedState {
 
 // MARK: - View
 
-/// The 3D black Jeep on its mirror floor (`forx://app/embed.html`), transparent over the panel's
-/// black. Picture only: CarPlay sends no touches, so the view ignores them. The page opens from
-/// above and makes its one turn to the 3/4 view by itself; the app only pushes state.
+/// The 3D black Jeep on its mirror floor (`forx://app/embed.html`), transparent over the panel.
+/// The view takes no touches: CarPlay's pan callbacks reach the page through `spin` (turn the
+/// Jeep, step the roof strip). The page opens from above and makes its one turn to the 3/4 view.
 struct JeepEmbedView: UIViewRepresentable {
     static let url = URL(string: "forx://app/embed.html")!
 
     let state: [String: Any]
+    var spin: DashboardSpin? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -74,12 +78,14 @@ struct JeepEmbedView: UIViewRepresentable {
 
         webView.navigationDelegate = coordinator
         coordinator.webView = webView
+        coordinator.attach(spin)
         coordinator.update(state)
         webView.load(URLRequest(url: Self.url))
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.attach(spin)
         context.coordinator.update(state)
     }
 
@@ -107,6 +113,20 @@ struct JeepEmbedView: UIViewRepresentable {
         func stop() {
             stopped = true
             ready = false
+        }
+
+        /// Drags from CarPlay come in as page calls (`spin(4.2)`, `release()`, `strip(1.3)`, …).
+        func attach(_ spin: DashboardSpin?) {
+            guard let spin, spin !== attached else { return }
+            attached = spin
+            spin.send = { [weak self] call in self?.call(call) }
+        }
+
+        private weak var attached: DashboardSpin?
+
+        private func call(_ js: String) {
+            guard ready, !stopped, let webView else { return }
+            webView.evaluateJavaScript("window.jeepEmbed && window.jeepEmbed.\(js)", completionHandler: nil)
         }
 
         private func push() {

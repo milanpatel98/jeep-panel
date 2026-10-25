@@ -19,6 +19,7 @@ struct ForxApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(store: store)
+                .preferredColorScheme(.dark)  // the phone stays dark; CarPlay follows the car
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {

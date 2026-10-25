@@ -29,7 +29,6 @@ targets:
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.milanpatel.Forx.refresh]
         NSFaceIDUsageDescription: "Face ID confirms it's you before unlocking the Jeep."
-        UIUserInterfaceStyle: Dark
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:

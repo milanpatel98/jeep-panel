@@ -44,7 +44,8 @@ nonisolated enum GlobeFit {
 
 // MARK: - View
 
-/// The whole Earth as a satellite globe on black (imagery only: no labels or borders), seen
+/// The whole Earth seen from far out: at night a satellite globe on black (imagery only: no
+/// labels or borders); by day Apple Maps' muted day map, blue oceans and land. Seen
 /// from far out over the Jeep's last location, with one small blue dot on the Jeep. Picture
 /// only: no touches, no compass or scale. Apple's legal label stays (MapKit requires it); the
 /// view can be larger than what shows, so `margins` keep the label on the visible part.
@@ -58,6 +59,8 @@ struct GlobeView: UIViewRepresentable {
     var globeRadius: CGFloat = 0
     var margins: EdgeInsets = EdgeInsets()
     var dotSize: CGFloat = 9
+    /// CarPlay's appearance: night (satellite) or day (muted standard map).
+    var dark: Bool = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -65,9 +68,6 @@ struct GlobeView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> GlobeMapView {
         let map = GlobeMapView(frame: .zero)
-        map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
-        map.overrideUserInterfaceStyle = .dark
-        map.backgroundColor = .black
         map.insetsLayoutMarginsFromSafeArea = false
 
         map.isUserInteractionEnabled = false
@@ -89,6 +89,7 @@ struct GlobeView: UIViewRepresentable {
             top: margins.top, left: margins.leading, bottom: margins.bottom, right: margins.trailing)
         if map.layoutMargins != insets { map.layoutMargins = insets }
         map.globeRadius = globeRadius
+        context.coordinator.style(dark: dark, on: map)
         context.coordinator.show(coordinate, dotSize: dotSize, on: map)
     }
 
@@ -101,6 +102,27 @@ struct GlobeView: UIViewRepresentable {
         private var shownKey: [Double]? = nil
         private var shownOnce = false
         private var dotSize: CGFloat = 9
+        private var shownDark: Bool? = nil
+
+        /// Night: satellite imagery on black. Day: the muted standard map in its light style.
+        /// Only when it changed; the camera is fitted again after.
+        func style(dark: Bool, on map: GlobeMapView) {
+            guard dark != shownDark else { return }
+            shownDark = dark
+            if dark {
+                map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
+                map.overrideUserInterfaceStyle = .dark
+                map.backgroundColor = .black
+            } else {
+                let config = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .muted)
+                config.pointOfInterestFilter = .excludingAll
+                config.showsTraffic = false
+                map.preferredConfiguration = config
+                map.overrideUserInterfaceStyle = .light
+                map.backgroundColor = .white
+            }
+            map.refit()
+        }
 
         /// Points the camera and moves the dot, only when something changed. No animation.
         func show(_ coordinate: CLLocationCoordinate2D?, dotSize: CGFloat, on map: GlobeMapView) {
@@ -157,6 +179,12 @@ final class GlobeMapView: MKMapView {
 
     private var needsFit = true
     private var fittedSize: CGSize = .zero
+
+    /// Sets the camera again on the next layout (after a change of map configuration).
+    func refit() {
+        needsFit = true
+        setNeedsLayout()
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()

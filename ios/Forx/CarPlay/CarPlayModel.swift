@@ -18,8 +18,8 @@ nonisolated struct CarPlayButton: Sendable, Equatable {
     let isLocked: Bool?
 }
 
-/// A row of the More list. `roofKey` ("on", "panels" or "off") marks the three roof choices
-/// (they change the 3D Jeep only).
+/// A row of the More list. `roofKey` ("on", "panels", "off" or "doorsOff") marks the roof
+/// choices (they change the 3D Jeep only).
 nonisolated struct CarPlayRow: Sendable, Equatable {
     let title: String
     let detail: String
@@ -35,13 +35,26 @@ nonisolated struct CarPlayApp: Sendable, Equatable {
     let symbol: String
 }
 
+/// The status glyph's colour.
+nonisolated enum CarPlayTint: Sendable, Equatable {
+    /// #30D158: locked, all closed.
+    case green
+    /// #FF9F0A: unlocked, or something open.
+    case amber
+}
+
 /// What the CarPlay screen shows, worked out from the store's state. Pure: no UIKit, no CarPlay.
 nonisolated struct CarPlayModel: Sendable, Equatable {
     let signedIn: Bool
     let name: String
-    let subtitle: String
-    let status: String
-    let statusKnown: Bool
+    /// The range, the header's hero number: "186", or "—" when unknown.
+    let rangeText: String
+    /// "78%", or nil when unknown (no battery glyph then).
+    let evText: String?
+    /// One word (or two): "Locked", "Unlocked", "Door open", "Tailgate open"; nil when unknown.
+    let statusWord: String?
+    let statusSymbol: String?
+    let statusTint: CarPlayTint?
     let message: String?
     let buttons: [CarPlayButton]
     let more: [CarPlayRow]
@@ -49,16 +62,23 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
 
     static let dash = "—"
 
-    /// The Apps tray, in order; CPGridTemplate holds at most 8.
+    /// The roof strip's steps, top to bottom (same keys as `AppModel.roof`).
+    static let roofSteps = ["on", "panels", "off", "doorsOff"]
+
+    /// The tray's favourites: the first four apps.
+    static var favouriteApps: [CarPlayApp] { Array(appList.prefix(4)) }
+
+    /// The Apps tray, in order; CPGridTemplate holds at most 8. `symbol` is the fallback when
+    /// the app's icon isn't bundled (`appicon-<id>`).
     static let appList: [CarPlayApp] = [
-        CarPlayApp(title: "YouTube Music", url: URL(string: "youtubemusic://")!, symbol: "play.circle.fill"),
-        CarPlayApp(title: "Spotify", url: URL(string: "spotify://")!, symbol: "waveform"),
-        CarPlayApp(title: "Apple Music", url: URL(string: "music://")!, symbol: "music.note"),
-        CarPlayApp(title: "Podcasts", url: URL(string: "podcasts://")!, symbol: "antenna.radiowaves.left.and.right"),
-        CarPlayApp(title: "Apple Maps", url: URL(string: "maps://")!, symbol: "map.fill"),
-        CarPlayApp(title: "Google Maps", url: URL(string: "comgooglemaps://")!, symbol: "mappin.and.ellipse"),
-        CarPlayApp(title: "Waze", url: URL(string: "waze://")!, symbol: "car.fill"),
-        CarPlayApp(title: "Phone", url: URL(string: "tel://")!, symbol: "phone.fill"),
+        CarPlayApp(title: "YouTube Music", url: URL(string: "youtubemusic://")!, symbol: "play.circle.fill", icon: "appicon-youtubemusic"),
+        CarPlayApp(title: "Spotify", url: URL(string: "spotify://")!, symbol: "waveform", icon: "appicon-spotify"),
+        CarPlayApp(title: "Apple Music", url: URL(string: "music://")!, symbol: "music.note", icon: "appicon-applemusic"),
+        CarPlayApp(title: "Apple Maps", url: URL(string: "maps://")!, symbol: "map.fill", icon: "appicon-applemaps"),
+        CarPlayApp(title: "Podcasts", url: URL(string: "podcasts://")!, symbol: "antenna.radiowaves.left.and.right", icon: "appicon-podcasts"),
+        CarPlayApp(title: "Google Maps", url: URL(string: "comgooglemaps://")!, symbol: "mappin.and.ellipse", icon: "appicon-googlemaps"),
+        CarPlayApp(title: "Waze", url: URL(string: "waze://")!, symbol: "car.fill", icon: "appicon-waze"),
+        CarPlayApp(title: "Phone", url: URL(string: "tel://")!, symbol: "phone.fill", icon: "appicon-phone"),
     ]
 
     /// `roof` is the chosen roof: "on", "panels" or "off". `now` and `timeZone` are for the
@@ -68,13 +88,15 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
         signedIn: Bool, roof: String, now: Date = Date(), timeZone: TimeZone = .current
     ) -> CarPlayModel {
         let s = snapshot
-        let (status, statusKnown) = statusLine(s)
+        let status = statusLine(s)
         return CarPlayModel(
             signedIn: signedIn,
             name: "Milan",
-            subtitle: subtitleLine(s),
-            status: status,
-            statusKnown: statusKnown,
+            rangeText: s?.rangeMiles.map(String.init) ?? dash,
+            evText: s?.evPercent.map { "\($0)%" },
+            statusWord: status?.word,
+            statusSymbol: status?.symbol,
+            statusTint: status?.tint,
             message: message,
             buttons: signedIn ? buttonRow(s, pending: pending, climateOn: climateOn) : [],
             more: moreRows(s, roof: roof, now: now, timeZone: timeZone),
@@ -84,34 +106,14 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
 
     // MARK: Left panel
 
-    /// "78% · 186 mi · Parked"; "—" for unknowns.
-    private static func subtitleLine(_ s: JeepSnapshot?) -> String {
-        let ev = s?.evPercent.map { "\($0)%" } ?? dash
-        let range = s?.rangeMiles.map { "\($0) mi" } ?? "\(dash) mi"
-        let gear = s?.ignitionOn == true ? "Driving" : "Parked"
-        return "\(ev) · \(range) · \(gear)"
-    }
-
-    /// Same wording as the web's attention() (src/state.js), joined with " · ".
-    /// Nothing to flag and locked → "Locked · all doors closed". Unknown → "—".
-    private static func statusLine(_ s: JeepSnapshot?) -> (String, Bool) {
-        guard let s else { return (dash, false) }
-        var parts: [String] = []
-        let names: [(String, String)] = [
-            ("driver", "Driver door"), ("passenger", "Passenger door"),
-            ("leftRear", "Rear left door"), ("rightRear", "Rear right door"),
-        ]
-        let open = names.filter { s.doorsOpen.contains($0.0) }.map { $0.1 }
-        if open.count == 4 {
-            parts.append("All doors open")
-        } else if !open.isEmpty {
-            parts.append(open.joined(separator: ", ") + " open")
-        }
-        if s.tailgateOpen == true { parts.append("Tailgate open") }
-        if s.locked == false { parts.append("Unlocked") }
-        if !parts.isEmpty { return (parts.joined(separator: " · "), true) }
-        if s.locked == true { return ("Locked · all doors closed", true) }
-        return (dash, false)
+    /// One word and a glyph. An open door wins, then the tailgate, then the lock. Unknown → nil.
+    private static func statusLine(_ s: JeepSnapshot?) -> (word: String, symbol: String, tint: CarPlayTint)? {
+        guard let s else { return nil }
+        if !s.doorsOpen.isEmpty { return ("Door open", "door.left.hand.open", .amber) }
+        if s.tailgateOpen == true { return ("Tailgate open", "car.side.rear.open.fill", .amber) }
+        if s.locked == false { return ("Unlocked", "lock.open.fill", .amber) }
+        if s.locked == true { return ("Locked", "lock.fill", .green) }
+        return nil
     }
 
     /// Lock, Climate, Lights (each only if the Jeep supports it), then More, always.
@@ -153,7 +155,9 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
         rows.append(CarPlayRow(
             title: "Charging", detail: chargingDetail(s, now: now, timeZone: timeZone),
             action: nil, roofKey: nil))
-        let roofs: [(String, String)] = [("on", "Top on"), ("panels", "Panels off"), ("off", "Top off")]
+        let roofs: [(String, String)] = [
+            ("on", "Top on"), ("panels", "Panels off"), ("off", "Top off"), ("doorsOff", "Doors off"),
+        ]
         for (key, title) in roofs {
             rows.append(CarPlayRow(title: title, detail: roof == key ? "✓" : "", action: nil, roofKey: key))
         }

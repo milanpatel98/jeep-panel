@@ -15,6 +15,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private var window: CPWindow?
     private var host: UIHostingController<DashboardView>?
     private var templates: CarPlayTemplates?
+    /// Drags on the map → the 3D Jeep. One per connect.
+    private var spin: DashboardSpin?
     private var connected = false
     private var ticker: Task<Void, Never>? = nil
     private var motionObserver: (any NSObjectProtocol)? = nil
@@ -31,17 +33,24 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
         // Built once per connect: sets the map template as root; updates go in place.
         let scene = templateApplicationScene
+        let spin = DashboardSpin()
+        self.spin = spin
         templates = CarPlayTemplates(
             interface: interfaceController,
             open: { [weak scene] url in scene?.open(url, options: nil, completionHandler: nil) },
-            perform: { cmd in Task { await AppModel.store.perform(cmd, fromCarPlay: true) } })
+            perform: { cmd in Task { await AppModel.store.perform(cmd, fromCarPlay: true) } },
+            spin: spin)
 
-        let host = UIHostingController(rootView: Self.dashboard())
-        host.view.backgroundColor = .black
-        host.overrideUserInterfaceStyle = .dark
+        let dark = Self.isDark(window)
+        let host = UIHostingController(rootView: Self.dashboard(dark: dark, spin: spin))
+        host.view.backgroundColor = dark ? .black : UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
         window.rootViewController = host
         self.host = host
         connected = true
+        // Day and night follow CarPlay's appearance (the car's light sensor and headlights).
+        window.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { [weak self] (_: CPWindow, _: UITraitCollection) in
+            self?.render()
+        }
         observe()
         startTicker()
         motionObserver = NotificationCenter.default.addObserver(
@@ -65,6 +74,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         window.rootViewController = nil  // frees the 3D Jeep's WebGL context now
         host = nil
         templates = nil
+        spin = nil
         self.interfaceController = nil
         self.window = nil
     }
@@ -75,19 +85,34 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     /// the next main-actor turn, so a burst of changes becomes one rebuild.
     private func observe() {
         guard connected else { return }
+        let dark = Self.isDark(window)
+        let spin = self.spin
+        let templates = self.templates
         let view = withObservationTracking {
-            Self.dashboard(templates: templates)
+            Self.dashboard(templates: templates, dark: dark, spin: spin)
         } onChange: { [weak self] in
             let delegate = self
             Task { @MainActor in delegate?.observe() }
         }
+        paint(dark)
         host?.rootView = view
     }
 
-    /// A rebuild outside observation (ticker, Reduce Motion); the observation stays armed.
+    /// A rebuild outside observation (ticker, Reduce Motion, appearance); the observation stays armed.
     private func render() {
         guard connected else { return }
-        host?.rootView = Self.dashboard(templates: templates)
+        let dark = Self.isDark(window)
+        paint(dark)
+        host?.rootView = Self.dashboard(templates: templates, dark: dark, spin: spin)
+    }
+
+    private func paint(_ dark: Bool) {
+        host?.view.backgroundColor = dark ? .black : UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
+    }
+
+    /// CarPlay's appearance: night unless the window says light.
+    private static func isDark(_ window: UIWindow?) -> Bool {
+        window?.traitCollection.userInterfaceStyle != .light
     }
 
     private func startTicker() {
@@ -102,7 +127,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     /// The dashboard for the store's state now; also updates the CarPlay buttons in place.
-    private static func dashboard(templates: CarPlayTemplates? = nil, now: Date = Date()) -> DashboardView {
+    private static func dashboard(
+        templates: CarPlayTemplates? = nil, dark: Bool = true, spin: DashboardSpin? = nil, now: Date = Date()
+    ) -> DashboardView {
         let store = AppModel.store
         let roof = AppModel.roof
         let snapshot = store.snapshot
@@ -110,13 +137,15 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let model = CarPlayModel.make(
             snapshot: snapshot, pending: store.pending, climateOn: climateOn, message: store.message,
             signedIn: !store.needsSignIn, roof: roof, now: now)
-        templates?.update(model)
+        templates?.update(model, dark: dark)
         let state = JeepEmbedState.make(
-            snapshot: snapshot, roof: roof, reducedMotion: UIAccessibility.isReduceMotionEnabled)
+            snapshot: snapshot, roof: roof, reducedMotion: UIAccessibility.isReduceMotionEnabled, dark: dark)
         var location: CLLocationCoordinate2D? = nil
         if let lat = snapshot?.latitude, let lng = snapshot?.longitude {
             location = CLLocationCoordinate2D(latitude: lat, longitude: lng)
         }
-        return DashboardView(model: model, jeepState: state, location: location, battery: snapshot?.evPercent)
+        return DashboardView(
+            model: model, jeepState: state, location: location, battery: snapshot?.evPercent,
+            dark: dark, spin: spin, tray: templates?.tray)
     }
 }
