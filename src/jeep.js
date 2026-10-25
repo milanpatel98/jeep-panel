@@ -9,7 +9,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const DOORS = { BL: 'Door', BR: 'Door_2', FL: 'Door_3', FR: 'Door_4' }
 
-// `fitView(name, view)`: optional; returns { d, y } to frame a view yourself (the CarPlay embed fits a sphere).
+// `fitView(name, view)`: optional; returns { d, y, offset: [px, py], fitAt? } to frame a view yourself (the CarPlay embed fits the turning box).
 export async function createJeep(canvas, { url, onProgress, onFrame, fitView } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -226,6 +226,29 @@ export async function createJeep(canvas, { url, onProgress, onFrame, fitView } =
     if (own) v = { ...v, ...own, shift: own.shift ?? 0, exact: true }
     const off = new THREE.Vector3(0, 0, v.shift || 0)
     const fromP = cam.position.clone(), toP = sph(v).add(off); const fromT = controls.target.clone(), toT = new THREE.Vector3(0, v.y, 0).add(off)
+    if (v.exact) {
+      // a self-framed view: glide around the target (not straight through), so the camera never cuts
+      // closer than either end, and slide the view offset (`v.offset`, px) along with it
+      const a0 = new THREE.Spherical().setFromVector3(fromP.clone().sub(fromT)), a1 = new THREE.Spherical().setFromVector3(toP.clone().sub(toT))
+      let dTheta = a1.theta - a0.theta; dTheta -= Math.round(dTheta / (2 * Math.PI)) * 2 * Math.PI
+      const o0 = cam.view?.enabled ? [cam.view.offsetX, cam.view.offsetY] : [0, 0], o1 = v.offset || [0, 0]
+      const at = new THREE.Spherical(), t = new THREE.Vector3()
+      tween(() => 0, (k) => {
+        controls.target.lerpVectors(fromT, toT, k)
+        at.set(a0.radius + (a1.radius - a0.radius) * k, a0.phi + (a1.phi - a0.phi) * k, a0.theta + dTheta * k)
+        let off = [o0[0] + (o1[0] - o0[0]) * k, o0[1] + (o1[1] - o0[1]) * k]
+        // in between, the view can frame each angle on the way (`v.fitAt(az, el)`), so the car never
+        // runs out of the frame mid-glide (from above to the 3/4 view the car looks taller on the way)
+        if (v.fitAt && k > 0 && k < 1) {
+          const f = v.fitAt(THREE.MathUtils.radToDeg(at.theta), 90 - THREE.MathUtils.radToDeg(at.phi))
+          if (f) { at.radius = f.d; off = f.offset }
+        }
+        cam.position.copy(t.setFromSpherical(at).add(controls.target))
+        const w = canvas.clientWidth, h = canvas.clientHeight
+        if (w && h) { cam.setViewOffset(w, h, off[0], off[1], w, h); cam.updateProjectionMatrix() }
+      }, 1, ms, 'cam')
+      return
+    }
     tween(() => 0, (k) => { cam.position.lerpVectors(fromP, toP, k); controls.target.lerpVectors(fromT, toT, k) }, 1, ms, 'cam')
   }
   cam.position.copy(sph(VIEWS.hero))

@@ -6,7 +6,7 @@
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 import { createJeep } from './jeep.js'
-import { embedCalls, stripStep, shortestTurn, fitDistance, STRIP_STEPS } from './embedState.js'
+import { embedCalls, stripStep, shortestTurn, fitBox, boxCorners, STRIP_STEPS } from './embedState.js'
 
 const canvas = document.getElementById('c')
 const params = new URLSearchParams(location.search)
@@ -50,15 +50,24 @@ function setYaw(deg) {
   jeep.kick()
 }
 function stopGlide() { cancelAnimationFrame(glideRaf); glideRaf = 0; clearTimeout(idle) }
+// While a drag turns the Jeep the camera stands back to the fit for every angle (it never clips);
+// back at the 3/4 view it closes in again to the big fit for that one angle.
+let spinFit = false
+function setSpinFit(on, ms) {
+  if (spinFit === on) return
+  spinFit = on
+  if (jeep && settled) jeep.setView('hero', reducedMotion ? 1 : ms)
+}
 function glideHome() {
   stopGlide()
   const from = shortestTurn(yaw)
-  if (reducedMotion || Math.abs(from) < 0.05) { setYaw(0); return }
+  if (reducedMotion || Math.abs(from) < 0.05) { setYaw(0); setSpinFit(false, 500); return }
   const t0 = performance.now()
   const step = (t) => {
     const k = Math.min(1, (t - t0) / 900)
     setYaw(from * (1 - ease(k)))
     glideRaf = k < 1 ? requestAnimationFrame(step) : 0
+    if (k >= 1) setSpinFit(false, 500)
   }
   glideRaf = requestAnimationFrame(step)
 }
@@ -104,7 +113,7 @@ window.jeepEmbed = {
   /** Turns the Jeep by `deg` (drag right: positive). */
   spin(deg) {
     if (!Number.isFinite(deg)) return
-    stopGlide(); toHero()
+    stopGlide(); toHero(); setSpinFit(true, 300)
     setYaw(yaw + deg)
   },
   /** The drag ended: 2.5 s later the Jeep glides back to the 3/4 view. */
@@ -222,9 +231,10 @@ function studio(renderer) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(...rgb).multiplyScalar(k), side: THREE.DoubleSide }))
     m.position.set(...pos); m.lookAt(...look); room.add(m)
   }
-  panel(3, 11, [1, 1, 1], 6, [0, 8, 0], [0, 0, 0])             // long softbox overhead, along the car (the top view's sheen)
-  panel(12, 3.2, [1, 1, 1], 14, [-7, 7.5, -9], [0, 1, 0])       // raised long softbox opposite the 3/4 camera: what the roof
-                                                                 // slats and hood mirror, the bright silver-white streaks
+  panel(1.2, 11, [1, 1, 1], 2.2, [0, 8, 0], [0, 0, 0])          // narrow softbox overhead, along the car (the top view's sheen)
+  // three thin raised strips opposite the 3/4 camera: the roof slats and hood mirror them as crisp
+  // silver streaks over black paint (thin, so the panels between them stay black)
+  for (const [y, k] of [[6.4, 9], [7.6, 12], [8.8, 9]]) panel(13, 0.22, [1, 1, 1], k, [-7, y, -9], [0, 1, 0])
   panel(7, 2.2, [1, 1, 1], 0.9, [7, 3.5, 5], [0, 1, 0])           // front-right key, draws the hood and fender
   panel(9, 0.9, [0.8, 0.88, 1], 1.8, [-8, 1.6, -8], [0, 1, 0])    // cool strip low behind, the rim
   panel(14, 0.8, [1, 1, 1], 11, [-7, 0.7, 7], [0, 0.7, 0])       // long strip front-left at bumper height: the fender line
@@ -237,39 +247,42 @@ function studio(renderer) {
   return tex
 }
 
-// ---------- framing: the whole Jeep, always ----------
-// The camera fits a sphere around the car (spare tyre, mirrors and roof rack included) with 8% free
-// on every side, centred in the area left of the roof strip. The sphere sits on the spin axis, so no
-// yaw ever pushes a part out of frame, and the top view fits the same way.
-const STRIP_W = 44, MARGIN = 0.08
-let sphere = null   // { r, y }: radius around the vertical spin axis, and its centre's height
+// ---------- framing: the whole Jeep, always, and big ----------
+// The camera fits the car's bounding boxes (spare tyre, mirrors and roof rack included) as they look on
+// screen: their corners, projected from the view's own pitch (while spinning: turned to every 15° of
+// a full spin, the union of all of them); that fills the area left of the roof strip less 6% on every side, and is centred
+// there by shifting the view. So the 3/4 view is as big as it can be and no spin ever clips it.
+// At rest (the 3/4 view, the top view) it fits only that one angle, so the car is big; while a drag
+// turns it, the camera eases back to the fit for every angle (setSpinFit).
+// STRIP_W: what the car's area leaves free on the right. Less than the strip's 44 px, so the car sits
+// right up against the puck (its rear just tucks under the strip's left edge, like the mockup)
+// instead of leaving a gap by the map card.
+const STRIP_W = 28, MARGIN = 0.06
+const SPIN_YAWS = Array.from({ length: 24 }, (_, i) => i * 15)
+let corners = null   // the body's bounding box corners, Jeep frame
+let boxY = 0         // the box's middle height: what the camera looks at
 
-function boundingSphere(root) {
-  // the tightest sphere centred on the spin axis (x = z = 0): measured on the vertices, not the box,
-  // whose empty corners would shrink the car for nothing
-  root.updateMatrixWorld(true)
-  const v = new THREE.Vector3(), pts = []
-  let lo = Infinity, hi = -Infinity
-  root.traverse((o) => {
-    if (!o.isMesh || !o.castShadow) return
-    const pos = o.geometry.attributes.position
-    for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld)
-      pts.push(Math.hypot(v.x, v.z), v.y)
-      lo = Math.min(lo, v.y); hi = Math.max(hi, v.y)
-    }
-  })
-  const y = (lo + hi) / 2
-  let r2 = 0
-  for (let i = 0; i < pts.length; i += 2) r2 = Math.max(r2, pts[i] * pts[i] + (pts[i + 1] - y) ** 2)
-  return { r: Math.sqrt(r2), y }
-}
-
-function fitView() {
-  if (!sphere) return null
+function fitView(name, v) {
+  if (!corners) return null
   const w = canvas.clientWidth, h = canvas.clientHeight
   if (!w || !h) return null
-  return { d: fitDistance(sphere.r, 24, Math.max(1, w - STRIP_W) / h, MARGIN), y: sphere.y }
+  // the top view is wider than the 3/4 view: it stops 4 px short of the puck, wherever the 3/4 view put it
+  const puckLeft = stripEl.getBoundingClientRect().left + (stripEl.offsetWidth - 30) / 2
+  const free = name === 'top' ? Math.max(STRIP_W, w - puckLeft + 4) : STRIP_W
+  const area = Math.max(1, w - free)
+  const yaws = spinFit && name !== 'top' ? SPIN_YAWS : [0]
+  const at = (az, el) => {
+    const fit = fitBox(corners, { az, el, ty: boxY, fovDeg: 24, aspect: area / h, margin: MARGIN, yaws })
+    // centre the union in the area: shift the view by where it landed (NDC → px), plus half the strip
+    return { d: fit.d, offset: [free / 2 + (fit.cx * area) / 2, (-fit.cy * h) / 2], right: area / 2 + (fit.hx * area) / 2 }
+  }
+  // the roof strip hugs the car at rest in the 3/4 view: its puck's left edge 6 px off the car's right
+  if (name === 'hero' && !spinFit) {
+    const right = at(v.az, v.el).right
+    stripEl.style.right = `${Math.max(0, w - (right + 6 + 15) - 22)}px`
+  }
+  // fitAt: the glide between views frames every angle on its way too (top → 3/4 never clips)
+  return { ...at(v.az, v.el), y: boxY, fitAt: at }
 }
 
 const lerp = (a, b, k) => a + (b - a) * k
@@ -355,17 +368,18 @@ async function main() {
   j.setTheme(wanted.theme === 'light' ? 'light' : 'dark'); shown.theme = wanted.theme === 'light' ? 'light' : 'dark'
   themed = true
 
-  // frame the whole car: the sphere fit (see fitView), shifted so it centres left of the roof strip
-  sphere = boundingSphere(j.root)
+  // frame the whole car (see fitView): the body's box, at no spin
+  // each part's own box corners, not just the whole body's: the whole box's empty top corners (over
+  // the low hood, behind the roof) would shrink the car for nothing. Still never inside the real outline.
+  corners = []
+  j.root.traverse((o) => { if (o.isMesh && o.castShadow) { const b = new THREE.Box3().setFromObject(o); if (!b.isEmpty()) corners.push(...boxCorners(b.min.toArray(), b.max.toArray())) } })
+  boxY = mid.y
   let viewName = 'hero'
   const setView = j.setView
   j.setView = (name, ms) => { viewName = name; setView(name, ms) }
   const frameCam = () => {
-    const w = canvas.clientWidth, h = canvas.clientHeight
-    if (!w || !h) return
+    if (!canvas.clientWidth || !canvas.clientHeight) return
     j.cam.zoom = 1
-    j.cam.setViewOffset(w, h, STRIP_W / 2, 0, w, h)
-    j.cam.updateProjectionMatrix()
     setView(viewName, 1)
     j.kick()
   }
