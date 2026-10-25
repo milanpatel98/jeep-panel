@@ -19,6 +19,22 @@ extension CPInterfaceController: CarPlayInterface {
     }
 }
 
+/// TEMPORARY diagnostics for the CarPlayTemplateUIHost crash. Debug builds only; reads the
+/// FORX_CP environment variable: nobars, nomap, bare, listroot. Anything else: normal.
+enum CarPlayDebug {
+    static var mode: String? {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["FORX_CP"]
+        #else
+        return nil
+        #endif
+    }
+    static var skipBarButtons: Bool { mode == "nobars" || mode == "bare" }
+    static var skipMapButtons: Bool { mode == "nomap" || mode == "bare" }
+    static var skipMapDelegate: Bool { mode == "bare" }
+    static var listRoot: Bool { mode == "listroot" }
+}
+
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the
 /// More list, the Apps grid and Settings, pushed on tap.
 @MainActor
@@ -66,9 +82,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         super.init()
         // The host's view controller (share button, etc.) talks to the delegate; without one
         // it crashes CarPlayTemplateUIHost. Set before the template becomes root.
-        mapTemplate.mapDelegate = self
+        if !CarPlayDebug.skipMapDelegate { mapTemplate.mapDelegate = self }
         mapTemplate.automaticallyHidesNavigationBar = false
-        interface.setRoot(mapTemplate)
+        if CarPlayDebug.listRoot {
+            interface.setRoot(CPListTemplate(title: "Forx", sections: []))
+        } else {
+            interface.setRoot(mapTemplate)
+        }
     }
 
     // MARK: CPMapTemplateDelegate
@@ -87,7 +107,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         let buttons = model.signedIn ? Array(model.buttons.prefix(Self.maxMapButtons)) : []
         if buttons != shownButtons {
             shownButtons = buttons
-            mapTemplate.mapButtons = buttons.map(mapButton)
+            if !CarPlayDebug.skipMapButtons { mapTemplate.mapButtons = buttons.map(mapButton) }
         }
 
         if model.signedIn != barsSignedIn {
@@ -109,6 +129,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     }
 
     private func setBarButtons(signedIn: Bool) {
+        if CarPlayDebug.skipBarButtons { return }
         if signedIn {
             mapTemplate.leadingNavigationBarButtons = [
                 barButton("magnifyingglass") { $0.tapSearch() },

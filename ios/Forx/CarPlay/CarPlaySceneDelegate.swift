@@ -1,5 +1,6 @@
 import CarPlay
 import CoreLocation
+import os
 import SwiftUI
 import UIKit
 
@@ -7,6 +8,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     /// Rebuild this often, so the Climate map button turns off when its 15 minutes run out
     /// (`dashboard` also updates the template buttons; nothing else re-reads the clock).
     static let tickInterval: Duration = .seconds(30)
+
+    private static let log = Logger(subsystem: "com.milanpatel.Forx", category: "carplay")
 
     private var interfaceController: CPInterfaceController?
     private var window: CPWindow?
@@ -23,6 +26,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     ) {
         self.interfaceController = interfaceController
         self.window = window
+        let mode = CarPlayDebug.mode ?? "normal"
+        Self.log.notice("CarPlay connect mode=\(mode, privacy: .public) bounds=\(NSCoder.string(for: window.bounds), privacy: .public)")
 
         // Built once per connect: sets the map template as root; updates go in place.
         let scene = templateApplicationScene
