@@ -31,8 +31,9 @@ nonisolated struct DashboardLayout: Equatable, Sendable {
 
     // MARK: Left panel, top to bottom
 
-    /// The width the page keeps for the roof strip at the Jeep's right (CSS px = pt).
-    static let stripWidth: CGFloat = 44
+    /// What the page leaves free right of the car for the roof strip (CSS px = pt; `STRIP_W` in
+    /// src/embed.js). The strip itself is 44 wide; the car tucks a little under its left edge.
+    static let stripReserve: CGFloat = 28
 
     /// The hero row and energy row start here, from the panel's left.
     var padLeft: CGFloat { 20 }
@@ -63,7 +64,7 @@ nonisolated struct DashboardLayout: Equatable, Sendable {
     /// The status line's centre: 22 pt above the bottom, under the middle of the Jeep (the
     /// page centres the Jeep in the area left of the roof strip).
     var statusY: CGFloat { size.height - 22 }
-    var statusCenterX: CGFloat { (panelWidth - Self.stripWidth) / 2 }
+    var statusCenterX: CGFloat { (panelWidth - Self.stripReserve) / 2 }
 
     /// The 3D Jeep: the panel's full width, from under the energy row (y 112 at 360 pt) to
     /// 44 pt above the bottom. The page fits the whole car inside this frame, with margin.
@@ -205,6 +206,9 @@ struct DashboardView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
+        // the whole window, not CarPlay's safe area: the layout's numbers are window coordinates
+        // ("Milan" centred on the search button at y 22)
+        .ignoresSafeArea()
         .background(theme.background.ignoresSafeArea())
         .environment(\.colorScheme, dark ? .dark : .light)
     }

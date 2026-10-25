@@ -5,49 +5,56 @@ import SwiftUI
 import Testing
 @testable import Forx
 
+/// Layout numbers are CGFloat: compare them with a tolerance, never ==.
+private func near(_ a: CGFloat, _ b: CGFloat) -> Bool {
+    abs(a - b) < 0.001
+}
+
 struct DashboardLayoutTests {
     @Test func panelTakesThirtyFivePercent() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(l.panelWidth == 336)
-        #expect(l.card == CGRect(x: 336, y: 12, width: 612, height: 336))
+        #expect(near(l.panelWidth, 336))
+        #expect(near(l.card.minX, 336) && near(l.card.minY, 12))
+        #expect(near(l.card.width, 612) && near(l.card.height, 336))
         #expect(l.showsBattery)
-        #expect(l.padLeft == 20)
+        #expect(near(l.padLeft, 20))
     }
 
     @Test func designSizeHeader() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
         // "Milan" beside CarPlay's search button: centred on it (y 22), from x 52
-        #expect(l.nameFont == 15)
-        #expect(l.nameLeading == 52)
-        #expect(l.nameCenterY == 22)
+        #expect(near(l.nameFont, 15))
+        #expect(near(l.nameLeading, 52))
+        #expect(near(l.nameCenterY, 22))
         // the range row at y 54, the energy row at y 96
-        #expect(l.heroTop == 54)
-        #expect(l.heroFont == 34)
-        #expect(l.unitFont == 15)
-        #expect(l.energyFont == 13)
-        #expect(l.energyTop == 96)
+        #expect(near(l.heroTop, 54))
+        #expect(near(l.heroFont, 34))
+        #expect(near(l.unitFont, 15))
+        #expect(near(l.energyFont, 13))
+        #expect(near(l.energyTop, 96))
     }
 
     @Test func jeepFillsFromEnergyRowToStatus() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(l.jeep == CGRect(x: 0, y: 112, width: 336, height: 360 - 44 - 112))
-        #expect(l.jeep.minY == l.energyTop + l.energyLine)
-        #expect(l.jeep.maxX == l.panelWidth)  // the page draws the roof strip inside, at its right
-        #expect(l.statusY == 360 - 22)
+        #expect(near(l.jeep.minX, 0) && near(l.jeep.minY, 112))
+        #expect(near(l.jeep.width, 336) && near(l.jeep.height, 360 - 44 - 112))
+        #expect(near(l.jeep.minY, l.energyTop + l.energyLine))
+        #expect(near(l.jeep.maxX, l.panelWidth))  // the page draws the roof strip inside, at its right
+        #expect(near(l.statusY, 360 - 22))
         // the status line centres under the Jeep, which the page centres left of the roof strip
-        #expect(l.statusCenterX == (336 - 44) / 2)
+        #expect(near(l.statusCenterX, (336 - 28) / 2))
     }
 
     @Test func typeShrinksToAFloorOnShortWindows() {
         let small = DashboardLayout(size: CGSize(width: 640, height: 240))
-        #expect(small.nameFont == 13)
-        #expect(small.heroFont == 26)
-        #expect(small.unitFont == 12)
-        #expect(small.energyFont == 11)
-        #expect(small.statusFont == 11)
+        #expect(near(small.nameFont, 13))
+        #expect(near(small.heroFont, 26))
+        #expect(near(small.unitFont, 12))
+        #expect(near(small.energyFont, 11))
+        #expect(near(small.statusFont, 11))
         let big = DashboardLayout(size: CGSize(width: 1920, height: 720))
-        #expect(big.heroFont == 34)
-        #expect(big.nameFont == 15)
+        #expect(near(big.heroFont, 34))
+        #expect(near(big.nameFont, 15))
     }
 
     @Test func narrowPanelDropsTheBattery() {
@@ -69,15 +76,15 @@ struct DashboardLayoutTests {
 
     @Test func globeOverflowsBottomRightAndKeepsTheLabelInside() {
         let l = DashboardLayout(size: CGSize(width: 640, height: 240))  // card 404 × 216
-        #expect(l.globeDiameter == 324)
+        #expect(near(l.globeDiameter, 324))
         let m = l.mapFrame
         #expect(abs(m.minX) < 0.0001 && abs(m.minY) < 0.0001)
         #expect(m.maxX >= l.card.width && m.maxY >= l.card.height)
         #expect(abs(l.mapMargins.bottom - (m.maxY - 216)) < 0.0001)
         #expect(abs(l.mapMargins.trailing - (m.maxX - 404)) < 0.0001)
-        #expect(l.mapMargins.top == 0 && l.mapMargins.leading == 0)
-        #expect(l.dotSize == 8)
-        #expect(DashboardLayout(size: CGSize(width: 1520, height: 628)).dotSize == 10)
+        #expect(near(l.mapMargins.top, 0) && near(l.mapMargins.leading, 0))
+        #expect(near(l.dotSize, 8))
+        #expect(near(DashboardLayout(size: CGSize(width: 1520, height: 628)).dotSize, 10))
     }
 
     @Test func themeColours() {
@@ -89,10 +96,10 @@ struct DashboardLayoutTests {
     }
 
     @Test func batteryFillAndColour() {
-        #expect(BatteryGauge.fill(78) == 0.78)
-        #expect(BatteryGauge.fill(140) == 1)
-        #expect(BatteryGauge.fill(-5) == 0)
-        #expect(BatteryGauge.fill(nil) == 0)
+        #expect(near(BatteryGauge.fill(78), 0.78))
+        #expect(near(BatteryGauge.fill(140), 1))
+        #expect(near(BatteryGauge.fill(-5), 0))
+        #expect(near(BatteryGauge.fill(nil), 0))
         #expect(BatteryGauge.low(20))
         #expect(!BatteryGauge.low(21))
         #expect(!BatteryGauge.low(nil))
