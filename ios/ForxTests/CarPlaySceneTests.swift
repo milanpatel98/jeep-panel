@@ -63,7 +63,8 @@ struct CarPlaySceneTests {
         #expect(t.mapTemplate.mapButtons.count == 4)
         #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
         #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 1)  // Apps; Settings is in More
+        #expect(t.mapTemplate.automaticallyHidesNavigationBar)
 
         // The same model again reassigns nothing (no flicker).
         let mapBefore = t.mapTemplate.mapButtons
@@ -178,7 +179,7 @@ struct CarPlaySceneTests {
         let fake = FakeCarPlayInterface()
         let t = make(fake, Recorder())
         t.update(model(snap()))
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 1)
         t.toggleTray()
         #expect(t.tray.isOpen)
         #expect(t.shownButtons.isEmpty)

@@ -126,7 +126,10 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         // The host's view controller (share button, etc.) talks to the delegate; without one
         // it crashes CarPlayTemplateUIHost. Set before the template becomes root.
         if !CarPlayDebug.skipMapDelegate { mapTemplate.mapDelegate = self }
-        mapTemplate.automaticallyHidesNavigationBar = false
+        // Search and Apps fade away when the screen isn't touched (the cards then take the full
+        // height) and come back on any touch. The map buttons stay.
+        mapTemplate.automaticallyHidesNavigationBar = true
+        mapTemplate.hidesButtonsWithNavigationBar = false
         if CarPlayDebug.listRoot {
             interface.setRoot(CPListTemplate(title: "Forx", sections: []))
         } else {
@@ -223,8 +226,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             mapTemplate.trailingNavigationBarButtons = [
                 // filled while the tray is open
                 barButton(key.trayOpen ? "square.grid.3x3.fill" : "square.grid.3x3") { $0.toggleTray() },
-                barButton("gearshape.fill") { $0.showSettings() },
-            ]
+            ]  // Settings lives at the bottom of More
         } else {
             mapTemplate.leadingNavigationBarButtons = []
             mapTemplate.trailingNavigationBarButtons = [
@@ -325,7 +327,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             }
             return item
         }
-        return [CPListSection(items: items)]
+        let settings = CPListItem(text: "Settings", detailText: nil)
+        settings.accessoryType = .disclosureIndicator
+        settings.handler = { [weak self] _, completion in
+            self?.showSettings()
+            completion()
+        }
+        return [CPListSection(items: items), CPListSection(items: [settings])]
     }
 
     private func settingsKey() -> SettingsKey {
