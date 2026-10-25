@@ -21,7 +21,7 @@ struct DashboardLayoutTests {
         #expect(l.unitFont == 15)
         #expect(l.batteryFont == 13)
         #expect(l.headerTop == 16)
-        #expect(l.headerBottom == 16 + 16 + 2 + 35)
+        #expect(abs(l.headerBottom - (16 + 16 + 2 + 35)) < 0.001)
     }
 
     @Test func jeepFillsFromHeaderToStatus() {
