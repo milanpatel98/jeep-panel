@@ -31,34 +31,46 @@ nonisolated struct DashboardLayout: Equatable, Sendable {
 
     // MARK: Left panel, top to bottom
 
-    /// The panel's inner padding.
+    /// The width the page keeps for the roof strip at the Jeep's right (CSS px = pt).
+    static let stripWidth: CGFloat = 44
+
+    /// The hero row and energy row start here, from the panel's left.
     var padLeft: CGFloat { 20 }
-    var headerTop: CGFloat { min(16, size.height * 0.045) }
 
-    var nameFont: CGFloat { type(13, floor: 11) }
-    var heroFont: CGFloat { type(30, floor: 24) }
-    var unitFont: CGFloat { type(15, floor: 12) }
-    var batteryFont: CGFloat { type(13, floor: 11) }
+    /// "Milan" sits beside CarPlay's search button (≈ x 4–40, y 4–40): vertically centred on it,
+    /// starting at x 52, so there's no empty band over the panel.
+    var nameLeading: CGFloat { 52 }
+    var nameCenterY: CGFloat { 22 }
+    var nameFont: CGFloat { type(15, floor: 13) }
     var nameLine: CGFloat { (nameFont * 1.25).rounded() }
-    var heroLine: CGFloat { (heroFont * 1.15).rounded() }
-    var headerHeight: CGFloat { nameLine + 2 + heroLine }
-    var headerBottom: CGFloat { headerTop + headerHeight }
 
-    /// Narrow panels drop the battery glyph and percentage.
+    /// The range: 34 pt at 360 pt, its row's top at y 54.
+    var heroTop: CGFloat { 54 }
+    var heroFont: CGFloat { type(34, floor: 26) }
+    var unitFont: CGFloat { type(15, floor: 12) }
+    var heroLine: CGFloat { (heroFont * 1.2).rounded() }
+
+    /// The battery capsule and percentage, just under the range (y 96 at 360 pt).
+    var energyTop: CGFloat { heroTop + heroLine + 1 }
+    var energyFont: CGFloat { type(13, floor: 11) }
+    var energyLine: CGFloat { (energyFont * 1.25).rounded() }
+
+    /// Narrow panels drop the battery capsule and percentage.
     var showsBattery: Bool { panelWidth >= 150 }
 
     var statusFont: CGFloat { type(13, floor: 11) }
     var statusLineHeight: CGFloat { (statusFont * 1.3).rounded() }
-    /// The status line's centre: its bottom sits as far above the panel bottom as the header's top.
-    var statusY: CGFloat { size.height - headerTop - statusLineHeight / 2 }
+    /// The status line's centre: 22 pt above the bottom, under the middle of the Jeep (the
+    /// page centres the Jeep in the area left of the roof strip).
+    var statusY: CGFloat { size.height - 22 }
+    var statusCenterX: CGFloat { (panelWidth - Self.stripWidth) / 2 }
 
-    /// The 3D Jeep, from just under the header to just above the status line. It runs 10 pt
-    /// past the panel's left edge (the panel clips it) and stops at its right edge, where the
-    /// page draws the roof strip.
+    /// The 3D Jeep: the panel's full width, from under the energy row (y 112 at 360 pt) to
+    /// 44 pt above the bottom. The page fits the whole car inside this frame, with margin.
     var jeep: CGRect {
-        let top = headerBottom + 2
-        let bottom = statusY - statusLineHeight / 2 - 2
-        return CGRect(x: -10, y: top, width: panelWidth + 10, height: max(0, bottom - top))
+        let top = energyTop + energyLine
+        let bottom = size.height - 44
+        return CGRect(x: 0, y: top, width: panelWidth, height: max(0, bottom - top))
     }
 
     // MARK: Right card (card coordinates)
@@ -91,12 +103,11 @@ nonisolated struct DashboardLayout: Equatable, Sendable {
     var trayIcon: CGFloat { type(48, floor: 36) }
 }
 
-/// The battery glyph: the SF Symbol for the nearest 25% step.
-nonisolated enum BatterySymbol {
-    static func name(_ percent: Int?) -> String {
-        let p = min(100, max(0, percent ?? 0))
-        let step = Int((Double(p) / 25).rounded()) * 25
-        return "battery.\(step)percent"
+/// The drawn battery capsule: how full, and when it turns red.
+nonisolated enum BatteryGauge {
+    /// 0…1, from the EV %.
+    static func fill(_ percent: Int?) -> CGFloat {
+        CGFloat(min(100, max(0, percent ?? 0))) / 100
     }
 
     /// Green above 20%, otherwise red.
@@ -158,8 +169,10 @@ struct DashboardView: View {
     let jeepState: [String: Any]
     /// The Jeep's last location (globe camera and dot).
     var location: CLLocationCoordinate2D? = nil
-    /// Battery %, for the glyph.
+    /// Battery %, for the capsule.
     var battery: Int? = nil
+    /// Charging now: a breathing bolt after the percentage.
+    var charging: Bool = false
     /// CarPlay's appearance: night (true) or day.
     var dark: Bool = true
     var spin: DashboardSpin? = nil
@@ -205,72 +218,78 @@ struct DashboardView: View {
                 .offset(x: l.jeep.minX, y: l.jeep.minY)
                 .accessibilityHidden(true)
 
-            header(l)
-                .frame(width: l.panelWidth - 2 * l.padLeft, height: l.headerHeight, alignment: .topLeading)
-                .offset(x: l.padLeft, y: l.headerTop)
+            Text(model.name)
+                .font(.system(size: l.nameFont, weight: .semibold))
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+                .frame(width: max(0, l.panelWidth - l.nameLeading - l.padLeft), height: l.nameLine, alignment: .leading)
+                .offset(x: l.nameLeading, y: l.nameCenterY - l.nameLine / 2)
+
+            hero(l)
+                .frame(width: l.panelWidth - 2 * l.padLeft, height: l.heroLine, alignment: .leading)
+                .offset(x: l.padLeft, y: l.heroTop)
+
+            if l.showsBattery, let ev = model.evText {
+                energy(l, ev)
+                    .frame(width: l.panelWidth - 2 * l.padLeft, height: l.energyLine, alignment: .leading)
+                    .offset(x: l.padLeft, y: l.energyTop)
+            }
 
             statusLine(l)
-                .frame(width: l.panelWidth - 2 * l.padLeft, height: l.statusLineHeight, alignment: .leading)
-                .offset(x: l.padLeft, y: l.statusY - l.statusLineHeight / 2)
+                .frame(width: l.panelWidth - 2 * l.padLeft, height: l.statusLineHeight)
+                .offset(x: l.statusCenterX - (l.panelWidth - 2 * l.padLeft) / 2, y: l.statusY - l.statusLineHeight / 2)
         }
     }
 
-    /// "Milan", then the range as the hero number with the battery beside it.
-    private func header(_ l: DashboardLayout) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(model.name)
-                .font(.system(size: l.nameFont, weight: .medium))
+    /// The range as the hero number, " mi" on its baseline.
+    private func hero(_ l: DashboardLayout) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(model.rangeText)
+                .font(.system(size: l.heroFont, weight: .semibold))
+                .tracking(-0.6)
+                .monospacedDigit()
+                .foregroundStyle(theme.text)
+            Text(" mi")
+                .font(.system(size: l.unitFont, weight: .medium))
                 .foregroundStyle(theme.secondary)
-                .frame(height: l.nameLine)
-                .lineLimit(1)
-
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(model.rangeText)
-                    .font(.system(size: l.heroFont, weight: .semibold))
-                    .tracking(-0.02 * l.heroFont)
-                    .monospacedDigit()
-                    .foregroundStyle(theme.text)
-                Text(" mi")
-                    .font(.system(size: l.unitFont, weight: .medium))
-                    .foregroundStyle(theme.secondary)
-
-                if l.showsBattery, let ev = model.evText {
-                    HStack(spacing: 4) {
-                        Image(systemName: BatterySymbol.name(battery))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(
-                                BatterySymbol.low(battery) ? DashboardTheme.red : DashboardTheme.green,
-                                theme.secondary)
-                            .accessibilityHidden(true)
-                        Text(ev)
-                            .monospacedDigit()
-                            .foregroundStyle(theme.secondary)
-                    }
-                    .font(.system(size: l.batteryFont, weight: .medium))
-                    .padding(.leading, 10)
-                }
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .frame(height: l.heroLine, alignment: .leading)
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
     }
 
-    /// One word and a glyph ("Locked"); a store message replaces it while shown (4 s).
-    /// Unknown shows nothing.
+    /// A drawn battery capsule, the EV %, and a breathing bolt while charging.
+    private func energy(_ l: DashboardLayout, _ ev: String) -> some View {
+        HStack(spacing: 6) {
+            BatteryCapsule(percent: battery, edge: theme.secondary.opacity(0.45))
+                .accessibilityHidden(true)
+            Text(ev)
+                .font(.system(size: l.energyFont, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(theme.secondary)
+            if charging {
+                BreathingBolt()
+                    .accessibilityLabel("Charging")
+            }
+        }
+        .lineLimit(1)
+    }
+
+    /// A soft glowing dot and one word ("Locked"), centred under the Jeep; a store message
+    /// replaces it while shown (4 s). Unknown shows nothing.
     private func statusLine(_ l: DashboardLayout) -> some View {
         Group {
             if let message = model.message {
                 Text(message)
                     .foregroundStyle(theme.text)
+                    .minimumScaleFactor(0.8)
             } else if let word = model.statusWord {
-                HStack(spacing: 6) {
-                    if let symbol = model.statusSymbol {
-                        Image(systemName: symbol)
-                            .font(.system(size: l.statusFont * 0.85, weight: .semibold))
-                            .foregroundStyle(DashboardTheme.tint(model.statusTint))
-                            .accessibilityHidden(true)
-                    }
+                HStack(spacing: 7) {
+                    let tint = DashboardTheme.tint(model.statusTint)
+                    Circle()
+                        .fill(tint)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: tint, radius: 4)
+                        .accessibilityHidden(true)
                     Text(word)
                         .foregroundStyle(theme.text)
                 }
@@ -373,5 +392,61 @@ struct DashboardView: View {
         .overlay(shape.strokeBorder(theme.trayEdge, lineWidth: 1))
         .shadow(color: theme.trayShadow, radius: dark ? 25 : 16, y: dark ? 20 : 8)
         .accessibilityHidden(true)
+    }
+}
+
+
+// MARK: - Battery and bolt
+
+/// The battery, drawn: a 24 × 11 capsule (3.5 corner, 1 pt edge), a 1.5 × 4 nub on the right,
+/// and an inner fill inset 1.5 pt as wide as the charge: green, red at 20% or less.
+struct BatteryCapsule: View {
+    let percent: Int?
+    let edge: Color
+
+    var body: some View {
+        let inner = CGSize(width: 24 - 3, height: 11 - 3)
+        HStack(spacing: 1) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    .strokeBorder(edge, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(BatteryGauge.low(percent) ? DashboardTheme.red : DashboardTheme.green)
+                    .frame(width: inner.width * BatteryGauge.fill(percent), height: inner.height)
+                    .padding(.leading, 1.5)
+            }
+            .frame(width: 24, height: 11)
+            UnevenRoundedRectangle(bottomTrailingRadius: 0.75, topTrailingRadius: 0.75, style: .continuous)
+                .fill(edge)
+                .frame(width: 1.5, height: 4)
+        }
+    }
+}
+
+/// `bolt.fill`, 11 pt green, its opacity breathing 0.45 ↔ 1 over 1.6 s; still with Reduce Motion.
+/// Driven by a timeline, so the dashboard's no-animation transaction doesn't stop it.
+struct BreathingBolt: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if reduceMotion {
+            bolt(opacity: 1)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                bolt(opacity: Self.opacity(at: context.date.timeIntervalSinceReferenceDate))
+            }
+        }
+    }
+
+    /// 1 at the start of each 1.6 s cycle, 0.45 halfway.
+    nonisolated static func opacity(at t: TimeInterval) -> Double {
+        0.725 + 0.275 * cos(2 * .pi * t / 1.6)
+    }
+
+    private func bolt(opacity: Double) -> some View {
+        Image(systemName: "bolt.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(DashboardTheme.green)
+            .opacity(opacity)
     }
 }

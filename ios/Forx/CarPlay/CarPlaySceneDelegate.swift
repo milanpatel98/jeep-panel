@@ -132,11 +132,15 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     ) -> DashboardView {
         let store = AppModel.store
         let roof = AppModel.roof
-        let snapshot = store.snapshot
+        // Debug demo first (FORX_CP=demo); then the live snapshot; signed in but the first fetch
+        // hasn't landed yet: the one on disk, before falling back to "—".
+        let demo = CarPlayDebug.demoSnapshot(now: now)
+        let signedIn = demo != nil || !store.needsSignIn
+        let snapshot = demo ?? store.snapshot ?? (signedIn ? store.lastKnownSnapshot : nil)
         let climateOn = store.climateOnUntil.map { now < $0 } ?? false
         let model = CarPlayModel.make(
             snapshot: snapshot, pending: store.pending, climateOn: climateOn, message: store.message,
-            signedIn: !store.needsSignIn, roof: roof, now: now)
+            signedIn: signedIn, roof: roof, now: now)
         templates?.update(model, dark: dark)
         let state = JeepEmbedState.make(
             snapshot: snapshot, roof: roof, reducedMotion: UIAccessibility.isReduceMotionEnabled, dark: dark)
@@ -146,6 +150,6 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         return DashboardView(
             model: model, jeepState: state, location: location, battery: snapshot?.evPercent,
-            dark: dark, spin: spin, tray: templates?.tray)
+            charging: snapshot?.charging == true, dark: dark, spin: spin, tray: templates?.tray)
     }
 }

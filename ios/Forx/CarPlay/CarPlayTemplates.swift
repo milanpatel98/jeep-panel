@@ -20,7 +20,9 @@ extension CPInterfaceController: CarPlayInterface {
 }
 
 /// TEMPORARY diagnostics for the CarPlayTemplateUIHost crash. Debug builds only; reads the
-/// FORX_CP environment variable: nobars, nomap, bare, listroot. Anything else: normal.
+/// FORX_CP environment variable: nobars, nomap, bare, listroot, demo. Anything else: normal.
+/// `demo` shows a fixture Jeep (signed in, 186 mi, locked) so the screen can be judged in the
+/// simulator without an account. Release builds never see any of it.
 enum CarPlayDebug {
     static var mode: String? {
         #if DEBUG
@@ -33,6 +35,23 @@ enum CarPlayDebug {
     static var skipMapButtons: Bool { mode == "nomap" || mode == "bare" }
     static var skipMapDelegate: Bool { mode == "bare" }
     static var listRoot: Bool { mode == "listroot" }
+    static var demo: Bool { mode == "demo" }
+
+    /// The demo Jeep (`FORX_CP=demo`, Debug only): nil otherwise.
+    static func demoSnapshot(now: Date = Date()) -> JeepSnapshot? {
+        #if DEBUG
+        guard demo else { return nil }
+        return JeepSnapshot(
+            nickname: "Jeep", locked: true, doorsOpen: [], tailgateOpen: false,
+            rangeMiles: 186, fuelPercent: 64, evPercent: 78, pluggedIn: false, charging: false,
+            chargeMinutesLeft: nil, tiresPsi: ["FL": 36, "FR": 36, "RL": 35, "RR": 36],
+            odometerMiles: nil, latitude: 39.7555, longitude: -105.2211,
+            supported: [.lock, .unlock, .climateOn, .climateOff, .lights, .horn],
+            updatedAt: now, ignitionOn: false, gasRangeMiles: 165)
+        #else
+        return nil
+        #endif
+    }
 }
 
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the

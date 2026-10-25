@@ -16,32 +16,38 @@ struct DashboardLayoutTests {
 
     @Test func designSizeHeader() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(l.nameFont == 13)
-        #expect(l.heroFont == 30)
+        // "Milan" beside CarPlay's search button: centred on it (y 22), from x 52
+        #expect(l.nameFont == 15)
+        #expect(l.nameLeading == 52)
+        #expect(l.nameCenterY == 22)
+        // the range row at y 54, the energy row at y 96
+        #expect(l.heroTop == 54)
+        #expect(l.heroFont == 34)
         #expect(l.unitFont == 15)
-        #expect(l.batteryFont == 13)
-        #expect(l.headerTop == 16)
-        #expect(abs(l.headerBottom - (16 + 16 + 2 + 35)) < 0.001)
+        #expect(l.energyFont == 13)
+        #expect(l.energyTop == 96)
     }
 
-    @Test func jeepFillsFromHeaderToStatus() {
+    @Test func jeepFillsFromEnergyRowToStatus() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(l.jeep.minY == l.headerBottom + 2)
-        #expect(l.jeep.maxY == l.statusY - l.statusLineHeight / 2 - 2)
-        #expect(l.jeep.minX == -10)
-        #expect(l.jeep.maxX == l.panelWidth)  // the roof strip sits at the panel's right edge
-        #expect(abs(l.statusY + l.statusLineHeight / 2 - (360 - 16)) < 0.0001)
+        #expect(l.jeep == CGRect(x: 0, y: 112, width: 336, height: 360 - 44 - 112))
+        #expect(l.jeep.minY == l.energyTop + l.energyLine)
+        #expect(l.jeep.maxX == l.panelWidth)  // the page draws the roof strip inside, at its right
+        #expect(l.statusY == 360 - 22)
+        // the status line centres under the Jeep, which the page centres left of the roof strip
+        #expect(l.statusCenterX == (336 - 44) / 2)
     }
 
     @Test func typeShrinksToAFloorOnShortWindows() {
         let small = DashboardLayout(size: CGSize(width: 640, height: 240))
-        #expect(small.nameFont == 11)
-        #expect(small.heroFont == 24)
+        #expect(small.nameFont == 13)
+        #expect(small.heroFont == 26)
         #expect(small.unitFont == 12)
+        #expect(small.energyFont == 11)
         #expect(small.statusFont == 11)
         let big = DashboardLayout(size: CGSize(width: 1920, height: 720))
-        #expect(big.heroFont == 30)
-        #expect(big.nameFont == 13)
+        #expect(big.heroFont == 34)
+        #expect(big.nameFont == 15)
     }
 
     @Test func narrowPanelDropsTheBattery() {
@@ -52,9 +58,12 @@ struct DashboardLayoutTests {
     @Test func partsStayInOrderTopToBottom() {
         for size in [CGSize(width: 640, height: 240), CGSize(width: 400, height: 240), CGSize(width: 960, height: 360), CGSize(width: 800, height: 480)] {
             let l = DashboardLayout(size: size)
-            #expect(l.headerBottom < l.jeep.minY)
+            #expect(l.nameCenterY + l.nameLine / 2 <= l.heroTop)
+            #expect(l.heroTop + l.heroLine <= l.energyTop)
+            #expect(l.energyTop + l.energyLine <= l.jeep.minY)
             #expect(l.jeep.maxY < l.statusY - l.statusLineHeight / 2)
             #expect(l.statusY + l.statusLineHeight / 2 < size.height)
+            #expect(l.jeep.height > 80)
         }
     }
 
@@ -79,14 +88,25 @@ struct DashboardLayoutTests {
         #expect(DashboardTheme(dark: false).secondary == Color(hex: 0x6E6E73))
     }
 
-    @Test func batteryStepsAndColour() {
-        #expect(BatterySymbol.name(62) == "battery.50percent")
-        #expect(BatterySymbol.name(88) == "battery.100percent")
-        #expect(BatterySymbol.name(12) == "battery.0percent")
-        #expect(BatterySymbol.name(nil) == "battery.0percent")
-        #expect(BatterySymbol.low(20))
-        #expect(!BatterySymbol.low(21))
-        #expect(!BatterySymbol.low(nil))
+    @Test func batteryFillAndColour() {
+        #expect(BatteryGauge.fill(78) == 0.78)
+        #expect(BatteryGauge.fill(140) == 1)
+        #expect(BatteryGauge.fill(-5) == 0)
+        #expect(BatteryGauge.fill(nil) == 0)
+        #expect(BatteryGauge.low(20))
+        #expect(!BatteryGauge.low(21))
+        #expect(!BatteryGauge.low(nil))
+    }
+
+    @Test func boltBreathesBetweenHalfAndFull() {
+        #expect(abs(BreathingBolt.opacity(at: 0) - 1) < 0.0001)
+        #expect(abs(BreathingBolt.opacity(at: 0.8) - 0.45) < 0.0001)
+        #expect(abs(BreathingBolt.opacity(at: 1.6) - 1) < 0.0001)
+    }
+
+    @MainActor @Test func demoJeepOnlyWithTheDemoMode() {
+        // tests run without FORX_CP: no fixture
+        #expect(CarPlayDebug.mode != "demo" ? CarPlayDebug.demoSnapshot() == nil : true)
     }
 }
 
