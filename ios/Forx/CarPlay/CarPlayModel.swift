@@ -33,6 +33,8 @@ nonisolated struct CarPlayApp: Sendable, Equatable {
     let title: String
     let url: URL
     let symbol: String
+    /// The bundled icon's asset name (`appicon-<id>`).
+    let icon: String
 }
 
 /// The status glyph's colour.
