@@ -22,7 +22,7 @@ extension CPInterfaceController: CarPlayInterface {
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the
 /// More list, the Apps grid and Settings, pushed on tap.
 @MainActor
-final class CarPlayTemplates {
+final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     let mapTemplate = CPMapTemplate()
     /// The map buttons now shown, left to right (mirrors `mapTemplate.mapButtons`).
     private(set) var shownButtons: [CarPlayButton] = []
@@ -63,8 +63,19 @@ final class CarPlayTemplates {
         self.perform = perform
         self.setRoof = setRoof
         self.email = email
+        super.init()
+        // The host's view controller (share button, etc.) talks to the delegate; without one
+        // it crashes CarPlayTemplateUIHost. Set before the template becomes root.
+        mapTemplate.mapDelegate = self
         mapTemplate.automaticallyHidesNavigationBar = false
         interface.setRoot(mapTemplate)
+    }
+
+    // MARK: CPMapTemplateDelegate
+
+    /// Forx is not a navigation app: no navigation metadata is provided.
+    func mapTemplateShouldProvideNavigationMetadata(_ mapTemplate: CPMapTemplate) -> Bool {
+        false
     }
 
     // MARK: Model → templates
