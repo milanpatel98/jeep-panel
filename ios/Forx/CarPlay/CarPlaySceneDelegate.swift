@@ -43,9 +43,6 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
         let dark = Self.isDark(window)
         let host = UIHostingController(rootView: Self.dashboard(dark: dark, spin: spin))
-        // no safe-area insets: the dashboard lays out in window coordinates (CarPlay's ~43 pt top inset
-        // would push everything under the search button down)
-        host.safeAreaRegions = []
         host.view.backgroundColor = dark ? .black : UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
         window.rootViewController = host
         self.host = host

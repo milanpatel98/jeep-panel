@@ -183,13 +183,18 @@ struct DashboardView: View {
 
     var body: some View {
         GeometryReader { geo in
+            // The card and tray keep CarPlay's safe area (clear of the dock and the top buttons).
+            // The panel runs up into the top band, so "Milan" sits beside the search button.
+            let top = geo.safeAreaInsets.top
             let layout = DashboardLayout(size: geo.size)
+            let tall = DashboardLayout(size: CGSize(width: geo.size.width, height: geo.size.height + top))
             ZStack(alignment: .topLeading) {
                 if model.signedIn {
                     ZStack(alignment: .topLeading) {
-                        panel(layout)
-                            .frame(width: layout.panelWidth, height: geo.size.height, alignment: .topLeading)
+                        panel(tall)
+                            .frame(width: tall.panelWidth, height: tall.size.height, alignment: .topLeading)
                             .clipped()
+                            .offset(y: -top)
                         card(layout)
                             .frame(width: layout.card.width, height: layout.card.height)
                             .offset(x: layout.card.minX, y: layout.card.minY)
@@ -206,9 +211,6 @@ struct DashboardView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
-        // the whole window, not CarPlay's safe area: the layout's numbers are window coordinates
-        // ("Milan" centred on the search button at y 22)
-        .ignoresSafeArea()
         .background(theme.background.ignoresSafeArea())
         .environment(\.colorScheme, dark ? .dark : .light)
     }
