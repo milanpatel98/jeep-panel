@@ -21,20 +21,6 @@ export function embedCalls(prev = {}, next = {}) {
   return calls
 }
 
-// The roof strip's steps, top to bottom. The strip shows the step for a roof + doorsOff state.
-export const STRIP_STEPS = [
-  { key: 'on', label: 'Top on' },
-  { key: 'panels', label: 'Panels' },
-  { key: 'off', label: 'Top off' },
-  { key: 'doorsOff', label: 'Doors off' },
-]
-
-export function stripStep(state = {}) {
-  if (state.doorsOff) return 3
-  const i = ROOFS.indexOf(state.roof ?? 'on')
-  return i < 0 ? 0 : i
-}
-
 // After a spin, the turn left over, in degrees, wrapped into (-180, 180]: the glide back takes the short way.
 export function shortestTurn(deg) {
   let d = deg % 360

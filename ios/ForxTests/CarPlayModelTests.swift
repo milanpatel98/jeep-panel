@@ -47,7 +47,10 @@ struct CarPlayModelTests {
         #expect(m.statusWord == "Locked")
         #expect(m.statusSymbol == "lock.fill")
         #expect(m.statusTint == .green)
-        #expect(m.buttons.map(\.kind) == [.lock, .climate, .lights, .more])
+        #expect(m.buttons.map(\.kind) == [.lock, .climate, .roof, .more])
+        #expect(button(m, .roof)?.roof == "on")
+        #expect(button(m, .roof)?.state == .off)
+        #expect(m.roofWord == "Top on")
         #expect(button(m, .lock)?.symbol == "lock.fill")
         #expect(button(m, .lock)?.state == .off)
         #expect(row(m, "Tires")?.detail == "FL 35 · FR 35 · RL 34 · RR —")
@@ -80,10 +83,11 @@ struct CarPlayModelTests {
 
     @Test func unsupportedCommandsHidden() {
         let m = model(snap(supported: [.lock, .unlock]))
-        #expect(m.buttons.map(\.kind) == [.lock, .more])
+        #expect(m.buttons.map(\.kind) == [.lock, .roof, .more])
         let titles = m.more.map(\.title)
         #expect(!titles.contains("Horn"))
         #expect(!titles.contains("Tailgate"))
+        #expect(!titles.contains("Lights"))
         #expect(titles == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Trip"])
         #expect(m.more.filter(\.roof).map(\.title) == ["Top on", "Panels off", "Top off", "Doors off"])
         #expect(m.more.compactMap(\.roofKey) == ["on", "panels", "off", "doorsOff"])
@@ -94,13 +98,14 @@ struct CarPlayModelTests {
 
         let all = model(snap())
         #expect(all.more.map(\.title)
-            == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Horn", "Tailgate", "Trip"])
+            == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Trip"])
+        #expect(row(all, "Lights")?.action == .lights)
         #expect(row(all, "Horn")?.action == .horn)
         #expect(row(all, "Tailgate")?.action == .gate)
 
         // No snapshot: only More, and data rows show "—".
         let none = model(nil)
-        #expect(none.buttons.map(\.kind) == [.more])
+        #expect(none.buttons.map(\.kind) == [.roof, .more])
         #expect(row(none, "Trip")?.detail == "—")
         #expect(row(none, "Charging")?.detail == "—")
         #expect(row(none, "Tires")?.detail == "FL — · FR — · RL — · RR —")
@@ -164,9 +169,15 @@ struct CarPlayModelTests {
         let unknown = model(snap(locked: nil))
         #expect(button(unknown, .lock)?.symbol == "lock.fill")
         #expect(button(unknown, .lock)?.state == .off)
-        #expect(button(model(snap()), .lights)?.state == .off)
-        #expect(button(model(snap(), pending: [.lights]), .lights)?.state == .pending)
         #expect(button(model(snap()), .more)?.symbol == "ellipsis")
+    }
+
+    @Test func roofCyclesOnPanelsOffDoorsOff() {
+        #expect(CarPlayModel.nextRoof(after: "on") == "panels")
+        #expect(CarPlayModel.nextRoof(after: "panels") == "off")
+        #expect(CarPlayModel.nextRoof(after: "off") == "doorsOff")
+        #expect(CarPlayModel.nextRoof(after: "doorsOff") == "on")
+        #expect(CarPlayModel.nextRoof(after: "bogus") == "panels")
     }
 
     @Test func roofCheckAndCharging() {
@@ -176,6 +187,12 @@ struct CarPlayModelTests {
         #expect(row(m, "Top off")?.detail == "")
         #expect(row(m, "Doors off")?.detail == "")
         #expect(row(model(snap(), roof: "doorsOff"), "Doors off")?.detail == "✓")
+        // the Roof button shows the roof, the status line names it
+        #expect(button(m, .roof)?.roof == "panels")
+        #expect(m.roofWord == "Panels off")
+        #expect(model(snap(), roof: "off").roofWord == "Top off")
+        #expect(model(snap(), roof: "doorsOff").roofWord == "Doors off")
+        #expect(button(model(snap(), roof: "bogus"), .roof)?.roof == "on")
         #expect(m.more.filter(\.roof).allSatisfy { $0.action == nil })
 
         // now is 2026-10-24 12:00 UTC; 130 min → 2:10 PM.

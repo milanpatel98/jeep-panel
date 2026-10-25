@@ -57,7 +57,7 @@ enum CarPlayDebug {
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the
 /// More list, the Apps grid and Settings, pushed on tap. The Apps button opens the tray: the
 /// map buttons become the four favourite apps until one opens, a command runs, or 8 s pass.
-/// Drags on the map go to the 3D Jeep (`spin`).
+/// Sideways drags on the map turn the 3D Jeep (`spin`); the Roof button steps the roof.
 @MainActor
 final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     let mapTemplate = CPMapTemplate()
@@ -246,8 +246,9 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             perform(button.isLocked == true ? .unlock : .lock)
         case .climate:
             perform(button.state == .on ? .climateOff : .climateOn)
-        case .lights:
-            perform(.lights)
+        case .roof:
+            // Top on → Panels → Top off → Doors off → Top on; the 3D Jeep follows the roof.
+            setRoof(CarPlayModel.nextRoof(after: button.roof ?? "on"))
         case .more:
             showMore()
         }
@@ -354,7 +355,11 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private func mapButton(_ b: CarPlayButton, dark: Bool) -> CPMapButton {
         let kind = b.kind
         let button = CPMapButton { [weak self] _ in self?.tap(kind) }
-        button.image = Self.tile(symbol: b.symbol, state: b.state, dark: dark)
+        if kind == .roof {
+            button.image = Self.roofTile(b.roof ?? "on", dark: dark)
+        } else {
+            button.image = Self.tile(symbol: b.symbol, state: b.state, dark: dark)
+        }
         return button
     }
 
@@ -378,36 +383,106 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     /// with a black 8% edge and a soft shadow. On (both): white on #0A84FF. Pending: the off
     /// tile with the glyph at 45%. Static: map button images don't animate.
     static func tile(symbol: String, state: CarPlayButtonState, dark: Bool = true) -> UIImage {
+        let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        let colour = glyphColour(state: state, dark: dark)
+        let symbolImage = UIImage(systemName: symbol, withConfiguration: config)?
+            .withTintColor(colour, renderingMode: .alwaysOriginal)
+        return tile(glyph: symbolImage, state: state, dark: dark)
+    }
+
+    /// The Roof button: the off tile (it's a mode, not on/off) with a drawn top-view Jeep for `roof`.
+    static func roofTile(_ roof: String, dark: Bool = true) -> UIImage {
+        tile(glyph: roofGlyph(roof, colour: glyphColour(state: .off, dark: dark)), state: .off, dark: dark)
+    }
+
+    private static func glyphColour(state: CarPlayButtonState, dark: Bool) -> UIColor {
+        let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
+        let off = dark ? UIColor.white : ink
+        switch state {
+        case .off: return off
+        case .on: return .white
+        case .pending: return off.withAlphaComponent(0.45)
+        }
+    }
+
+    /// A 20 pt top-view Jeep, nose up: a 12 × 20 rounded body, the windshield line, and the roof
+    /// for `roof`. Top on: the roof filled. Panels: the roof outlined, its rear half filled (the
+    /// front two panels are out). Top off: the roof outlined. Doors off: the roof outlined and the
+    /// body's sides open where the doors were.
+    static func roofGlyph(_ roof: String, colour: UIColor) -> UIImage {
+        let side: CGFloat = 20
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { context in
+            let cg = context.cgContext
+            colour.setStroke()
+            colour.setFill()
+            let line: CGFloat = 1.5
+            // body 12 × 20, its stroke inside the 20 pt square
+            let body = CGRect(x: 4, y: 0, width: 12, height: 20).insetBy(dx: line / 2, dy: line / 2)
+            let bodyPath = UIBezierPath(roundedRect: body, cornerRadius: 3.5)
+            bodyPath.lineWidth = line
+            if roof == "doorsOff" {
+                // leave the sides open from the windshield to the rear wheel
+                cg.saveGState()
+                let clip = UIBezierPath(rect: CGRect(x: 0, y: 0, width: side, height: side))
+                clip.append(UIBezierPath(rect: CGRect(x: 2, y: 6.5, width: 3.5, height: 8)))
+                clip.append(UIBezierPath(rect: CGRect(x: 14.5, y: 6.5, width: 3.5, height: 8)))
+                clip.usesEvenOddFillRule = true
+                clip.addClip()
+                bodyPath.stroke()
+                cg.restoreGState()
+            } else {
+                bodyPath.stroke()
+            }
+            // windshield
+            let glass = UIBezierPath()
+            glass.move(to: CGPoint(x: 6, y: 6))
+            glass.addLine(to: CGPoint(x: 14, y: 6))
+            glass.lineWidth = line
+            glass.lineCapStyle = .round
+            glass.stroke()
+            // the roof, windshield to the rear
+            let top = CGRect(x: 6.5, y: 7.5, width: 7, height: 9.5)
+            switch roof {
+            case "on":
+                UIBezierPath(roundedRect: top, cornerRadius: 1.5).fill()
+            case "panels":
+                let outline = UIBezierPath(roundedRect: top.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1.5)
+                outline.lineWidth = 1
+                outline.stroke()
+                let rear = CGRect(x: top.minX, y: top.midY, width: top.width, height: top.height / 2)
+                UIBezierPath(roundedRect: rear, cornerRadius: 1.5).fill()
+            default:
+                let outline = UIBezierPath(roundedRect: top.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1.5)
+                outline.lineWidth = 1
+                outline.stroke()
+            }
+        }
+        return image.withRenderingMode(.alwaysOriginal)
+    }
+
+    /// The round tile behind a glyph (see `tile(symbol:state:dark:)`).
+    private static func tile(glyph symbolImage: UIImage?, state: CarPlayButtonState, dark: Bool) -> UIImage {
         let side = tileSide
         // day: a little room around the circle for its shadow
         let pad: CGFloat = dark ? 0 : 2
         let canvas = side + 2 * pad
-        let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
         let offTile = dark ? UIColor(red: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255, alpha: 1) : UIColor.white
-        let offGlyph = dark ? UIColor.white : ink
         let edge = dark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08)
 
         let background: UIColor
-        let glyph: UIColor
         var stroke: UIColor? = edge
         var shadow = !dark
         switch state {
-        case .off:
+        case .off, .pending:
             background = offTile
-            glyph = offGlyph
         case .on:
             background = UIColor(red: 0x0A / 255, green: 0x84 / 255, blue: 1, alpha: 1)
-            glyph = .white
             stroke = nil
             shadow = false
-        case .pending:
-            background = offTile
-            glyph = offGlyph.withAlphaComponent(0.45)
         }
 
-        let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
-        let symbolImage = UIImage(systemName: symbol, withConfiguration: config)?
-            .withTintColor(glyph, renderingMode: .alwaysOriginal)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 3
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: canvas, height: canvas), format: format)

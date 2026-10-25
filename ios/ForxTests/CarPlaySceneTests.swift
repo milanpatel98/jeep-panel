@@ -36,11 +36,12 @@ struct CarPlaySceneTests {
     }
 
     private func model(
-        _ s: JeepSnapshot?, signedIn: Bool = true, pending: Set<JeepCommand> = [], climateOn: Bool = false
+        _ s: JeepSnapshot?, signedIn: Bool = true, pending: Set<JeepCommand> = [], climateOn: Bool = false,
+        roof: String = "on"
     ) -> CarPlayModel {
         CarPlayModel.make(
             snapshot: s, pending: pending, climateOn: climateOn, message: nil,
-            signedIn: signedIn, roof: "on", now: now, timeZone: TimeZone(identifier: "UTC")!)
+            signedIn: signedIn, roof: roof, now: now, timeZone: TimeZone(identifier: "UTC")!)
     }
 
     private func make(_ fake: FakeCarPlayInterface, _ rec: Recorder) -> CarPlayTemplates {
@@ -60,7 +61,7 @@ struct CarPlaySceneTests {
         #expect(fake.roots.count == 1)
         #expect(fake.roots.first === t.mapTemplate)
         #expect(t.mapTemplate.mapButtons.count == 4)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .lights, .more])
+        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
         #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
         #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
 
@@ -71,12 +72,12 @@ struct CarPlaySceneTests {
         #expect(t.mapTemplate.mapButtons.first === mapBefore.first)
         #expect(t.mapTemplate.trailingNavigationBarButtons.first === barBefore.first)
 
-        // No Lights support: Lights is absent, More stays; same map template, updated in place.
-        let noLights = model(snap(supported: [.lock, .unlock, .climateOn, .climateOff]))
-        t.update(noLights)
+        // No Climate support: Climate is absent, Roof and More stay; same map template, updated in place.
+        let noClimate = model(snap(supported: [.lock, .unlock, .lights]))
+        t.update(noClimate)
         #expect(fake.roots.count == 1)
         #expect(t.mapTemplate.mapButtons.count == 3)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .more])
+        #expect(t.shownButtons.map(\.kind) == [.lock, .roof, .more])
 
         // Not signed in: no map buttons, only Settings.
         t.update(model(snap(), signedIn: false))
@@ -93,6 +94,24 @@ struct CarPlaySceneTests {
         t.update(model(snap(locked: false)))
         t.tap(.lock)
         #expect(rec.commands == [.unlock, .lock])
+    }
+
+    @Test func roofTapCyclesTheRoof() {
+        let rec = Recorder()
+        let t = make(FakeCarPlayInterface(), rec)
+        var roof = "on"
+        for _ in 0..<4 {
+            t.update(model(snap(), roof: roof))
+            t.tap(.roof)
+            roof = rec.roofs.last ?? roof
+        }
+        #expect(rec.roofs == ["panels", "off", "doorsOff", "on"])
+        #expect(rec.commands.isEmpty)
+        // the tile is redrawn for each roof
+        t.update(model(snap(), roof: "on"))
+        let before = t.mapTemplate.mapButtons[2]
+        t.update(model(snap(), roof: "panels"))
+        #expect(t.mapTemplate.mapButtons[2] !== before)
     }
 
     @Test func lockTapWhenUnknownSendsLock() {
@@ -143,16 +162,16 @@ struct CarPlaySceneTests {
         let list = try #require(fake.pushed.last as? CPListTemplate)
         let items = list.sections.flatMap(\.items).compactMap { $0 as? CPListItem }
         #expect(items.map(\.text) == [
-            "Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Horn", "Tailgate", "Trip",
+            "Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Trip",
         ])
         let tappable = items.filter { $0.handler != nil }
-        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Doors off", "Horn", "Tailgate"])
+        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate"])
         for item in tappable {
             item.handler?(item) { rec.completions += 1 }
         }
         #expect(rec.completions == tappable.count)
         #expect(rec.roofs == ["on", "panels", "off", "doorsOff"])
-        #expect(rec.commands == [.horn, .gate])
+        #expect(rec.commands == [.lights, .horn, .gate])
     }
 
     @Test func trayModeSwapsMapButtonsToFavourites() {
@@ -174,7 +193,7 @@ struct CarPlaySceneTests {
         // Closing brings the command buttons back.
         t.toggleTray()
         #expect(!t.tray.isOpen)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .lights, .more])
+        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
         #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
     }
 
@@ -187,7 +206,7 @@ struct CarPlaySceneTests {
         #expect(rec.urls == [URL(string: "spotify://")!])
         #expect(!t.tray.isOpen)
         #expect(t.shownApps.isEmpty)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .lights, .more])
+        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
     }
 
     @Test func commandClosesTray() {

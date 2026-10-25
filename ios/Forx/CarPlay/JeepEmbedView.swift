@@ -44,7 +44,7 @@ nonisolated enum JeepEmbedState {
 
 /// The 3D black Jeep on its mirror floor (`forx://app/embed.html`), transparent over the panel.
 /// The view takes no touches: CarPlay's pan callbacks reach the page through `spin` (turn the
-/// Jeep, step the roof strip). The page opens from above and makes its one turn to the 3/4 view.
+/// Jeep). The page opens from above and makes its one turn to the 3/4 view.
 struct JeepEmbedView: UIViewRepresentable {
     static let url = URL(string: "forx://app/embed.html")!
 
@@ -115,7 +115,7 @@ struct JeepEmbedView: UIViewRepresentable {
             ready = false
         }
 
-        /// Drags from CarPlay come in as page calls (`spin(4.2)`, `release()`, `strip(1.3)`, …).
+        /// Drags from CarPlay come in as page calls (`spin(4.2)`, `release()`).
         func attach(_ spin: DashboardSpin?) {
             guard let spin, spin !== attached else { return }
             attached = spin

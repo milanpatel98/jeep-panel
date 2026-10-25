@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { embedCalls, stripStep, shortestTurn, fitBox, boxCorners } from '../src/embedState.js'
+import { embedCalls, shortestTurn, fitBox, boxCorners } from '../src/embedState.js'
 
 test('embedCallsOnlyDiffs', () => {
   assert.deepEqual(embedCalls({}, { lights: true }), [['setLights', true]])
@@ -41,15 +41,6 @@ test('embedCallsDoorsOff', () => {
   assert.deepEqual(embedCalls({ doorsOff: false }, { doorsOff: false }), [])
   // roof and doors-off together: roof first
   assert.deepEqual(embedCalls({ roof: 'on' }, { roof: 'off', doorsOff: true }), [['setRoof', 'off'], ['setDoorsOff', true]])
-})
-
-test('stripStepFollowsRoofAndDoors', () => {
-  assert.equal(stripStep({}), 0)
-  assert.equal(stripStep({ roof: 'on' }), 0)
-  assert.equal(stripStep({ roof: 'panels' }), 1)
-  assert.equal(stripStep({ roof: 'off' }), 2)
-  assert.equal(stripStep({ roof: 'off', doorsOff: true }), 3)
-  assert.equal(stripStep({ roof: 'bogus' }), 0)
 })
 
 test('shortestTurnWraps', () => {

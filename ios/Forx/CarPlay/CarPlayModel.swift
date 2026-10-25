@@ -2,7 +2,7 @@ import Foundation
 
 /// The CarPlay map buttons, left to right.
 nonisolated enum CarPlayButtonKind: Sendable, Equatable {
-    case lock, climate, lights, more
+    case lock, climate, roof, more
 }
 
 /// Drawn, not animated: map button images are static.
@@ -16,6 +16,8 @@ nonisolated struct CarPlayButton: Sendable, Equatable {
     let symbol: String
     /// The snapshot's lock state (Lock button only): true locked, false unlocked, nil unknown.
     let isLocked: Bool?
+    /// The roof step it shows (Roof button only): "on", "panels", "off" or "doorsOff".
+    var roof: String? = nil
 }
 
 /// A row of the More list. `roofKey` ("on", "panels", "off" or "doorsOff") marks the roof
@@ -57,6 +59,8 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
     let statusWord: String?
     let statusSymbol: String?
     let statusTint: CarPlayTint?
+    /// The roof, for the status line: "Top on", "Panels off", "Top off" or "Doors off".
+    let roofWord: String
     let message: String?
     let buttons: [CarPlayButton]
     let more: [CarPlayRow]
@@ -64,8 +68,24 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
 
     static let dash = "—"
 
-    /// The roof strip's steps, top to bottom (same keys as `AppModel.roof`).
+    /// The roof steps, in the order the Roof button cycles them (same keys as `AppModel.roof`).
     static let roofSteps = ["on", "panels", "off", "doorsOff"]
+
+    /// The step after `roof`, wrapping from "doorsOff" back to "on". Unknown → "panels" (after "on").
+    static func nextRoof(after roof: String) -> String {
+        let i = roofSteps.firstIndex(of: roof) ?? 0
+        return roofSteps[(i + 1) % roofSteps.count]
+    }
+
+    /// "Top on", "Panels off", "Top off", "Doors off"; unknown keys read as "Top on".
+    static func roofTitle(_ roof: String) -> String {
+        switch roof {
+        case "panels": "Panels off"
+        case "off": "Top off"
+        case "doorsOff": "Doors off"
+        default: "Top on"
+        }
+    }
 
     /// The tray's favourites: the first four apps.
     static var favouriteApps: [CarPlayApp] { Array(appList.prefix(4)) }
@@ -99,8 +119,9 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
             statusWord: status?.word,
             statusSymbol: status?.symbol,
             statusTint: status?.tint,
+            roofWord: roofTitle(roof),
             message: message,
-            buttons: signedIn ? buttonRow(s, pending: pending, climateOn: climateOn) : [],
+            buttons: signedIn ? buttonRow(s, pending: pending, climateOn: climateOn, roof: roof) : [],
             more: moreRows(s, roof: roof, now: now, timeZone: timeZone),
             apps: appList
         )
@@ -118,9 +139,10 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
         return nil
     }
 
-    /// Lock, Climate, Lights (each only if the Jeep supports it), then More, always.
+    /// Lock, Climate (each only if the Jeep supports it), then Roof and More, always.
+    /// Lights lives in the More list. Roof is a mode, not on/off: always the off tile.
     private static func buttonRow(
-        _ s: JeepSnapshot?, pending: Set<JeepCommand>, climateOn: Bool
+        _ s: JeepSnapshot?, pending: Set<JeepCommand>, climateOn: Bool, roof: String
     ) -> [CarPlayButton] {
         let supported: Set<JeepCommand> = s?.supported ?? []
         var buttons: [CarPlayButton] = []
@@ -137,11 +159,8 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
             let state: CarPlayButtonState = busy ? .pending : (climateOn ? .on : .off)
             buttons.append(CarPlayButton(kind: .climate, state: state, symbol: "fan.fill", isLocked: nil))
         }
-        if supported.contains(.lights) {
-            // Momentary: never stays on.
-            let state: CarPlayButtonState = pending.contains(.lights) ? .pending : .off
-            buttons.append(CarPlayButton(kind: .lights, state: state, symbol: "headlight.high.beam.fill", isLocked: nil))
-        }
+        let step = roofSteps.contains(roof) ? roof : "on"
+        buttons.append(CarPlayButton(kind: .roof, state: .off, symbol: "", isLocked: nil, roof: step))
         buttons.append(CarPlayButton(kind: .more, state: .off, symbol: "ellipsis", isLocked: nil))
         return buttons
     }
@@ -162,6 +181,9 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
         ]
         for (key, title) in roofs {
             rows.append(CarPlayRow(title: title, detail: roof == key ? "✓" : "", action: nil, roofKey: key))
+        }
+        if supported.contains(.lights) {
+            rows.append(CarPlayRow(title: "Lights", detail: "", action: .lights, roofKey: nil))
         }
         if supported.contains(.horn) {
             rows.append(CarPlayRow(title: "Horn", detail: "", action: .horn, roofKey: nil))

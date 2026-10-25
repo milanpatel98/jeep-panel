@@ -1,12 +1,12 @@
 // The 3D Jeep on its own, for the CarPlay screen's left panel (loaded in a web view).
 // Black Jeep on a faint mirror floor that fades out to nothing; the page itself is transparent.
 // It opens from above and makes one slow turn to the three-quarter view; nothing else moves on its own.
-// The app drives it with window.jeepEmbed: apply(state), spin(deg) / release() for a horizontal drag,
-// strip(pos) / stripRelease(step) for a vertical one (the roof strip). The page itself takes no touches.
+// The app drives it with window.jeepEmbed: apply(state), spin(deg) / release() for a horizontal drag.
+// The page itself takes no touches.
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 import { createJeep } from './jeep.js'
-import { embedCalls, stripStep, shortestTurn, fitBox, boxCorners, STRIP_STEPS } from './embedState.js'
+import { embedCalls, shortestTurn, fitBox, boxCorners } from './embedState.js'
 
 const canvas = document.getElementById('c')
 const params = new URLSearchParams(location.search)
@@ -30,8 +30,7 @@ function toHero() {
 
 function sync() {
   const theme = wanted.theme === 'light' ? 'light' : 'dark'
-  document.documentElement.dataset.theme = theme      // the roof strip follows at once
-  if (!dragging) placeStrip(stripStep(merge(shown, wanted)), false)
+  document.documentElement.dataset.theme = theme
   if (!jeep) return
   for (const [method, ...args] of embedCalls(shown, wanted)) jeep[method](...args)
   shown = merge(shown, wanted)
@@ -72,40 +71,12 @@ function glideHome() {
   glideRaf = requestAnimationFrame(step)
 }
 
-// ---------- roof strip: a dotted track with a little Jeep-top thumb at the current step ----------
-const stripEl = document.getElementById('strip')
-const puckEl = document.getElementById('puck')
-const labelEl = document.getElementById('strip-label')
-const GLYPHS = [
-  '<rect x="7" y="13" width="18" height="26" rx="3" fill="currentColor" opacity=".9"/>',   // top on
-  '<rect x="7" y="23" width="18" height="16" rx="3" fill="currentColor" opacity=".9"/>',   // panels off: rear half stays
-  '',                                                                                      // top off
-  '',                                                                                      // doors off
-]
-const BODY = '<rect x="3" y="2" width="26" height="52" rx="9" fill="none" stroke="currentColor" stroke-width="2"/>'
-// doors off: the body outline with its sides open where the doors were
-const NO_DOORS = '<path d="M3 17V11a9 9 0 0 1 9-9h8a9 9 0 0 1 9 9v6M3 41v4a9 9 0 0 0 9 9h8a9 9 0 0 0 9-9v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-const glyph = (i) => `<svg viewBox="0 0 32 56" aria-hidden="true">${i === 3 ? NO_DOORS : BODY}${GLYPHS[i]}<path d="M8 8h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
-let shownGlyph = -1, dragging = false
-function placeStrip(pos, live) {
-  const max = STRIP_STEPS.length - 1
-  const i = Math.round(Math.min(max, Math.max(0, pos)))
-  stripEl.classList.toggle('live', live)
-  stripEl.style.setProperty('--pos', String(Math.min(max, Math.max(0, pos)) / max))
-  if (i !== shownGlyph) {
-    shownGlyph = i; puckEl.innerHTML = glyph(i); labelEl.textContent = STRIP_STEPS[i].label
-    // a label wider than the strip ("Doors off") moves left so it never runs off the page
-    labelEl.style.marginLeft = `${-Math.max(0, labelEl.offsetWidth / 2 - (stripEl.offsetWidth / 2 - 2))}px`
-  }
-}
-
 // set up right away, so the app can send state before the Jeep has loaded
 window.jeepEmbed = {
   apply(state = {}) {
     wanted = merge(wanted, state)
     if (typeof state.reducedMotion === 'boolean') {
       reducedMotion = state.reducedMotion || reducedMotion
-      document.documentElement.classList.toggle('reduce', reducedMotion)
       if (state.reducedMotion) toHero()   // Reduce Motion: no turn, straight to the 3/4 view
     }
     sync()
@@ -121,19 +92,7 @@ window.jeepEmbed = {
     stopGlide()
     idle = setTimeout(glideHome, 2500)
   },
-  /** The thumb follows the finger: `pos` is a step, fractional while dragging (0 top on … 3 doors off). */
-  strip(pos) {
-    if (!Number.isFinite(pos)) return
-    dragging = true
-    placeStrip(pos, true)
-  },
-  /** The finger lifted: the thumb springs to `step`; the app sends the matching roof next. */
-  stripRelease(step) {
-    dragging = false
-    placeStrip(Number.isFinite(step) ? step : stripStep(merge(shown, wanted)), false)
-  },
 }
-placeStrip(0, false)
 
 // glossy black floor: a real reflection, faint, fading to fully transparent a short way out from the
 // Jeep's footprint (so only the lower third of the car shows in it, and there is never an edge)
@@ -250,14 +209,11 @@ function studio(renderer) {
 // ---------- framing: the whole Jeep, always, and big ----------
 // The camera fits the car's bounding boxes (spare tyre, mirrors and roof rack included) as they look on
 // screen: their corners, projected from the view's own pitch (while spinning: turned to every 15° of
-// a full spin, the union of all of them); that fills the area left of the roof strip less 6% on every side, and is centred
-// there by shifting the view. So the 3/4 view is as big as it can be and no spin ever clips it.
+// a full spin, the union of all of them); that fills the whole frame less 6% on every side, and is
+// centred by shifting the view. So the 3/4 view is as big as it can be and no spin ever clips it.
 // At rest (the 3/4 view, the top view) it fits only that one angle, so the car is big; while a drag
 // turns it, the camera eases back to the fit for every angle (setSpinFit).
-// STRIP_W: what the car's area leaves free on the right. Less than the strip's 44 px, so the car sits
-// right up against the puck (its rear just tucks under the strip's left edge, like the mockup)
-// instead of leaving a gap by the map card.
-const STRIP_W = 28, MARGIN = 0.06
+const MARGIN = 0.06
 const SPIN_YAWS = Array.from({ length: 24 }, (_, i) => i * 15)
 let corners = null   // the body's bounding box corners, Jeep frame
 let boxY = 0         // the box's middle height: what the camera looks at
@@ -266,20 +222,11 @@ function fitView(name, v) {
   if (!corners) return null
   const w = canvas.clientWidth, h = canvas.clientHeight
   if (!w || !h) return null
-  // the top view is wider than the 3/4 view: it stops 4 px short of the puck, wherever the 3/4 view put it
-  const puckLeft = stripEl.getBoundingClientRect().left + (stripEl.offsetWidth - 30) / 2
-  const free = name === 'top' ? Math.max(STRIP_W, w - puckLeft + 4) : STRIP_W
-  const area = Math.max(1, w - free)
   const yaws = spinFit && name !== 'top' ? SPIN_YAWS : [0]
   const at = (az, el) => {
-    const fit = fitBox(corners, { az, el, ty: boxY, fovDeg: 24, aspect: area / h, margin: MARGIN, yaws })
-    // centre the union in the area: shift the view by where it landed (NDC → px), plus half the strip
-    return { d: fit.d, offset: [free / 2 + (fit.cx * area) / 2, (-fit.cy * h) / 2], right: area / 2 + (fit.hx * area) / 2 }
-  }
-  // the roof strip hugs the car at rest in the 3/4 view: its puck's left edge 6 px off the car's right
-  if (name === 'hero' && !spinFit) {
-    const right = at(v.az, v.el).right
-    stripEl.style.right = `${Math.max(0, w - (right + 6 + 15) - 22)}px`
+    const fit = fitBox(corners, { az, el, ty: boxY, fovDeg: 24, aspect: w / h, margin: MARGIN, yaws })
+    // centre the union in the frame: shift the view by where it landed (NDC → px)
+    return { d: fit.d, offset: [(fit.cx * w) / 2, (-fit.cy * h) / 2] }
   }
   // fitAt: the glide between views frames every angle on its way too (top → 3/4 never clips)
   return { ...at(v.az, v.el), y: boxY, fitAt: at }

@@ -11,53 +11,47 @@ private func near(_ a: CGFloat, _ b: CGFloat) -> Bool {
 }
 
 struct DashboardLayoutTests {
-    @Test func panelTakesThirtyFivePercent() {
+    @Test func twoCardsShareTopAndBottom() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(near(l.panelWidth, 336))
-        #expect(near(l.card.minX, 336) && near(l.card.minY, 12))
-        #expect(near(l.card.width, 612) && near(l.card.height, 336))
+        // Jeep card: 6 from the leading edge, 35% of the width
+        #expect(near(l.jeepCard.minX, 6) && near(l.jeepCard.minY, 6))
+        #expect(near(l.jeepCard.width, 336) && near(l.jeepCard.height, 348))
+        // globe card: 10 pt after it, to 6 pt from the trailing edge, same top and bottom
+        #expect(near(l.card.minX, 352) && near(l.card.minY, 6))
+        #expect(near(l.card.maxX, 954))
+        #expect(near(l.card.height, l.jeepCard.height) && near(l.card.maxY, 354))
+        #expect(near(DashboardLayout.cardRadius, 24))
         #expect(l.showsBattery)
-        #expect(near(l.padLeft, 20))
     }
 
-    @Test func designSizeHeader() {
+    @Test func designSizeJeepCard() {
         let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        // "Milan" beside CarPlay's search button: centred on it (y 22), from x 52
-        #expect(near(l.nameFont, 15))
-        #expect(near(l.nameLeading, 52))
-        #expect(near(l.nameCenterY, 22))
-        // the range row at y 54, the energy row at y 96
-        #expect(near(l.heroTop, 54))
+        #expect(near(l.nameFont, 12))
+        #expect(near(l.nameTop, 18))
         #expect(near(l.heroFont, 34))
         #expect(near(l.unitFont, 15))
         #expect(near(l.energyFont, 13))
-        #expect(near(l.energyTop, 96))
-    }
-
-    @Test func jeepFillsFromEnergyRowToStatus() {
-        let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(near(l.jeep.minX, 0) && near(l.jeep.minY, 112))
-        #expect(near(l.jeep.width, 336) && near(l.jeep.height, 360 - 44 - 112))
-        #expect(near(l.jeep.minY, l.energyTop + l.energyLine))
-        #expect(near(l.jeep.maxX, l.panelWidth))  // the page draws the roof strip inside, at its right
-        #expect(near(l.statusY, 360 - 22))
-        // the status line centres under the Jeep, which the page centres left of the roof strip
-        #expect(near(l.statusCenterX, (336 - 28) / 2))
+        #expect(near(l.heroTop, l.nameTop + l.nameLine))
+        // the Jeep: full card width, from y 74 to 38 above the card's bottom
+        #expect(near(l.jeep.minX, 0) && near(l.jeep.minY, 74))
+        #expect(near(l.jeep.width, 336) && near(l.jeep.maxY, 348 - 38))
+        // the status line's bottom 16 above the card's
+        #expect(near(l.statusBottom, 348 - 16))
     }
 
     @Test func typeShrinksToAFloorOnShortWindows() {
         let small = DashboardLayout(size: CGSize(width: 640, height: 240))
-        #expect(near(small.nameFont, 13))
+        #expect(near(small.nameFont, 11))
         #expect(near(small.heroFont, 26))
         #expect(near(small.unitFont, 12))
         #expect(near(small.energyFont, 11))
         #expect(near(small.statusFont, 11))
         let big = DashboardLayout(size: CGSize(width: 1920, height: 720))
         #expect(near(big.heroFont, 34))
-        #expect(near(big.nameFont, 15))
+        #expect(near(big.nameFont, 12))
     }
 
-    @Test func narrowPanelDropsTheBattery() {
+    @Test func narrowCardDropsTheBattery() {
         #expect(!DashboardLayout(size: CGSize(width: 400, height: 240)).showsBattery)
         #expect(DashboardLayout(size: CGSize(width: 640, height: 240)).showsBattery)
     }
@@ -65,23 +59,23 @@ struct DashboardLayoutTests {
     @Test func partsStayInOrderTopToBottom() {
         for size in [CGSize(width: 640, height: 240), CGSize(width: 400, height: 240), CGSize(width: 960, height: 360), CGSize(width: 800, height: 480)] {
             let l = DashboardLayout(size: size)
-            #expect(l.nameCenterY + l.nameLine / 2 <= l.heroTop)
-            #expect(l.heroTop + l.heroLine <= l.energyTop)
-            #expect(l.energyTop + l.energyLine <= l.jeep.minY)
-            #expect(l.jeep.maxY < l.statusY - l.statusLineHeight / 2)
-            #expect(l.statusY + l.statusLineHeight / 2 < size.height)
+            #expect(l.nameTop + l.nameLine <= l.heroTop)
+            #expect(l.heroTop + l.heroLine <= l.jeep.minY)
+            #expect(l.jeep.maxY <= l.statusBottom - l.statusLineHeight)
+            #expect(l.statusBottom < l.jeepCard.height)
             #expect(l.jeep.height > 80)
+            #expect(near(l.card.minX - l.jeepCard.maxX, 10))
         }
     }
 
     @Test func globeOverflowsBottomRightAndKeepsTheLabelInside() {
-        let l = DashboardLayout(size: CGSize(width: 640, height: 240))  // card 404 × 216
-        #expect(near(l.globeDiameter, 324))
+        let l = DashboardLayout(size: CGSize(width: 640, height: 240))  // card 394 × 228
+        #expect(near(l.globeDiameter, 342))
         let m = l.mapFrame
         #expect(abs(m.minX) < 0.0001 && abs(m.minY) < 0.0001)
         #expect(m.maxX >= l.card.width && m.maxY >= l.card.height)
-        #expect(abs(l.mapMargins.bottom - (m.maxY - 216)) < 0.0001)
-        #expect(abs(l.mapMargins.trailing - (m.maxX - 404)) < 0.0001)
+        #expect(abs(l.mapMargins.bottom - (m.maxY - 228)) < 0.0001)
+        #expect(abs(l.mapMargins.trailing - (m.maxX - 394)) < 0.0001)
         #expect(near(l.mapMargins.top, 0) && near(l.mapMargins.leading, 0))
         #expect(near(l.dotSize, 8))
         #expect(near(DashboardLayout(size: CGSize(width: 1520, height: 628)).dotSize, 10))
