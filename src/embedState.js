@@ -42,3 +42,14 @@ export function shortestTurn(deg) {
   if (d <= -180) d += 360
   return d
 }
+
+// How far a perspective camera must stand from a sphere's centre so the whole sphere fits the frame
+// with `margin` (a fraction of the frame) left free on every side. `fovDeg` is the vertical field of
+// view; `aspect` is width / height of the area the sphere has to fit in. The sphere's silhouette is a
+// cone of half-angle asin(r / d), so it fits when that is within the narrower half-angle.
+export function fitDistance(radius, fovDeg, aspect, margin = 0) {
+  if (!(radius > 0) || !(fovDeg > 0) || !(aspect > 0)) return 0
+  const tan = Math.tan((fovDeg * Math.PI) / 360) * (1 - 2 * Math.min(Math.max(margin, 0), 0.45))
+  const t = Math.min(tan, tan * aspect)
+  return (radius * Math.sqrt(1 + t * t)) / t
+}

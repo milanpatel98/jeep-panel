@@ -6,7 +6,7 @@
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 import { createJeep } from './jeep.js'
-import { embedCalls, stripStep, shortestTurn, STRIP_STEPS } from './embedState.js'
+import { embedCalls, stripStep, shortestTurn, fitDistance, STRIP_STEPS } from './embedState.js'
 
 const canvas = document.getElementById('c')
 const params = new URLSearchParams(location.search)
@@ -41,10 +41,12 @@ function sync() {
 // After 2.5 s with no drag it glides back to the 3/4 view (900 ms ease-in-out), like the phone.
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 let yaw = 0, glideRaf = 0, idle = 0
+let floor = null   // the mirror floor's uniforms: its fade follows the Jeep's footprint as it turns
 function setYaw(deg) {
   yaw = deg
   if (!jeep) return
   jeep.root.rotation.y = THREE.MathUtils.degToRad(deg)
+  if (floor) floor.yaw.value = jeep.root.rotation.y
   jeep.kick()
 }
 function stopGlide() { cancelAnimationFrame(glideRaf); glideRaf = 0; clearTimeout(idle) }
@@ -80,8 +82,12 @@ function placeStrip(pos, live) {
   const max = STRIP_STEPS.length - 1
   const i = Math.round(Math.min(max, Math.max(0, pos)))
   stripEl.classList.toggle('live', live)
-  stripEl.style.setProperty('--pos', String(pos / max))
-  if (i !== shownGlyph) { shownGlyph = i; puckEl.innerHTML = glyph(i); labelEl.textContent = STRIP_STEPS[i].label }
+  stripEl.style.setProperty('--pos', String(Math.min(max, Math.max(0, pos)) / max))
+  if (i !== shownGlyph) {
+    shownGlyph = i; puckEl.innerHTML = glyph(i); labelEl.textContent = STRIP_STEPS[i].label
+    // a label wider than the strip ("Doors off") moves left so it never runs off the page
+    labelEl.style.marginLeft = `${-Math.max(0, labelEl.offsetWidth / 2 - (stripEl.offsetWidth / 2 - 2))}px`
+  }
 }
 
 // set up right away, so the app can send state before the Jeep has loaded
@@ -120,17 +126,21 @@ window.jeepEmbed = {
 }
 placeStrip(0, false)
 
-// glossy black floor: a real reflection, faint, fading to fully transparent away from the Jeep (no edge)
+// glossy black floor: a real reflection, faint, fading to fully transparent a short way out from the
+// Jeep's footprint (so only the lower third of the car shows in it, and there is never an edge)
 const FloorShader = {
   name: 'JeepFloor',
   uniforms: {
     color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null },
-    strength: { value: 0.3 },                       // how much of the Jeep the floor reflects
-    glow: { value: new THREE.Color(0.08, 0.083, 0.09) }, // a faint pool of light under the car, so the shadow reads
-    radius: { value: new THREE.Vector2(2.7, 4.0) },  // fade ellipse (x across the car, z along it)
+    strength: { value: 0.25 },                      // how much of the Jeep the floor reflects
+    glow: { value: new THREE.Color(0.05, 0.052, 0.058) }, // a faint pool of light under the car, so the shadow reads
+    foot: { value: new THREE.Vector2(1, 2.4) },      // the footprint's half size (x across, z along), set from the model
+    centre: { value: new THREE.Vector2(0, 0) },      // the footprint's centre, in the Jeep's own frame
+    reach: { value: 0.7 },                           // the reflection is gone this far out from the footprint (m)
+    yaw: { value: 0 },                               // the Jeep's spin, so the footprint turns with it
     light: { value: 0 },                             // 0 night … 1 day (cross-fades)
     dayFloor: { value: new THREE.Color(0.86, 0.86, 0.875) },  // day: pale grey glaze under the car (output colour)
-    dayStrength: { value: 0.34 },                    // day: how much of the black Jeep the floor mirrors
+    dayStrength: { value: 0.18 },                    // day: how much of the black Jeep the floor mirrors
   },
   vertexShader: /* glsl */`
     uniform mat4 textureMatrix;
@@ -149,7 +159,10 @@ const FloorShader = {
     uniform sampler2D tDiffuse;
     uniform float strength;
     uniform vec3 glow;
-    uniform vec2 radius;
+    uniform vec2 foot;
+    uniform vec2 centre;
+    uniform float reach;
+    uniform float yaw;
     uniform float light;
     uniform vec3 dayFloor;
     uniform float dayStrength;
@@ -158,9 +171,13 @@ const FloorShader = {
     #include <logdepthbuf_pars_fragment>
     void main() {
       #include <logdepthbuf_fragment>
-      float r = length(vXZ / radius);
-      float fade = 1.0 - smoothstep(0.35, 1.0, r);   // reflection dies off near the car
-      float pool = 1.0 - smoothstep(0.0, 1.05, r);   // the light pool reaches a little further
+      // distance from the footprint (a rounded box in the Jeep's own frame; negative under the car)
+      float c = cos(yaw), s = sin(yaw);
+      vec2 p = vec2(c * vXZ.x - s * vXZ.y, s * vXZ.x + c * vXZ.y) - centre;
+      vec2 q = abs(p) - foot;
+      float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+      float fade = 1.0 - smoothstep(-0.15, reach, d);        // the reflection dies off close to the car
+      float pool = 1.0 - smoothstep(-0.8, reach * 1.4, d);   // the light pool reaches a little further
       vec4 tex = texture2DProj(tDiffuse, vUv);
       vec3 refl = mix(tex.rgb, vec3(dot(tex.rgb, vec3(0.2126, 0.7152, 0.0722))), 0.85);  // a near-neutral reflection: no beige chassis showing
 
@@ -205,9 +222,12 @@ function studio(renderer) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(...rgb).multiplyScalar(k), side: THREE.DoubleSide }))
     m.position.set(...pos); m.lookAt(...look); room.add(m)
   }
-  panel(2, 9, [1, 1, 1], 2.2, [0, 9, 0], [0, 0, 0])               // softbox overhead, along the car
+  panel(3, 11, [1, 1, 1], 6, [0, 8, 0], [0, 0, 0])             // long softbox overhead, along the car (the top view's sheen)
+  panel(12, 3.2, [1, 1, 1], 14, [-7, 7.5, -9], [0, 1, 0])       // raised long softbox opposite the 3/4 camera: what the roof
+                                                                 // slats and hood mirror, the bright silver-white streaks
   panel(7, 2.2, [1, 1, 1], 0.9, [7, 3.5, 5], [0, 1, 0])           // front-right key, draws the hood and fender
   panel(9, 0.9, [0.8, 0.88, 1], 1.8, [-8, 1.6, -8], [0, 1, 0])    // cool strip low behind, the rim
+  panel(14, 0.8, [1, 1, 1], 11, [-7, 0.7, 7], [0, 0.7, 0])       // long strip front-left at bumper height: the fender line
   const floor = new THREE.Mesh(new THREE.CircleGeometry(7, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.1, 1.1, 1.15) }))
   floor.rotation.x = -Math.PI / 2; floor.position.y = -0.6; room.add(floor)  // a lit studio floor, so the doors show their shape
   panel(14, 1.2, [1, 1, 1], 0.35, [0, 1.2, 12], [0, 1, 0])        // low horizon line, a thin highlight along the sides
@@ -217,10 +237,48 @@ function studio(renderer) {
   return tex
 }
 
+// ---------- framing: the whole Jeep, always ----------
+// The camera fits a sphere around the car (spare tyre, mirrors and roof rack included) with 8% free
+// on every side, centred in the area left of the roof strip. The sphere sits on the spin axis, so no
+// yaw ever pushes a part out of frame, and the top view fits the same way.
+const STRIP_W = 44, MARGIN = 0.08
+let sphere = null   // { r, y }: radius around the vertical spin axis, and its centre's height
+
+function boundingSphere(root) {
+  // the tightest sphere centred on the spin axis (x = z = 0): measured on the vertices, not the box,
+  // whose empty corners would shrink the car for nothing
+  root.updateMatrixWorld(true)
+  const v = new THREE.Vector3(), pts = []
+  let lo = Infinity, hi = -Infinity
+  root.traverse((o) => {
+    if (!o.isMesh || !o.castShadow) return
+    const pos = o.geometry.attributes.position
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld)
+      pts.push(Math.hypot(v.x, v.z), v.y)
+      lo = Math.min(lo, v.y); hi = Math.max(hi, v.y)
+    }
+  })
+  const y = (lo + hi) / 2
+  let r2 = 0
+  for (let i = 0; i < pts.length; i += 2) r2 = Math.max(r2, pts[i] * pts[i] + (pts[i + 1] - y) ** 2)
+  return { r: Math.sqrt(r2), y }
+}
+
+function fitView() {
+  if (!sphere) return null
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  if (!w || !h) return null
+  return { d: fitDistance(sphere.r, 24, Math.max(1, w - STRIP_W) / h, MARGIN), y: sphere.y }
+}
+
+const lerp = (a, b, k) => a + (b - a) * k
+
 async function main() {
   const j = await createJeep(canvas, {
     url: new URL('model/jeep.glb', document.baseURI).href,
     onProgress: (p) => post({ type: 'progress', value: p }),
+    fitView,
   })
   const scene = j.root.parent
   j.renderer.setClearColor(0x000000, 0)      // transparent: the panel's black shows through
@@ -228,6 +286,17 @@ async function main() {
   j.setNight(false)
 
   scene.environment = studio(j.renderer)
+
+  // the body paint (and the hardtop's clones of it): night is glossy black with a clear coat, so the
+  // studio's softboxes read as bright silver-white streaks; day keeps pass 1's satin metallic black
+  const paints = new Set()
+  j.root.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.name === 'JMI_1355060001_004') paints.add(m) })
+  const coat = (k) => {
+    for (const m of paints) {
+      m.metalness = lerp(0.15, 0.55, k); m.roughness = lerp(0.1, 0.2, k)
+      if (m.isMeshPhysicalMaterial) { m.clearcoat = lerp(1, 0, k); m.clearcoatRoughness = 0.04 }
+    }
+  }
 
   // the body's footprint (only the car's own meshes, not the headlight pools on the ground)
   const body = new THREE.Box3(); j.root.traverse((o) => { if (o.isMesh && o.castShadow) body.union(new THREE.Box3().setFromObject(o)) })
@@ -238,6 +307,10 @@ async function main() {
   Object.assign(mirror.material, { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor })
   mirror.renderOrder = 1
   scene.add(mirror)
+  floor = mirror.material.uniforms
+  floor.foot.value.set(size.x / 2, size.z / 2)
+  floor.centre.value.set(mid.x, mid.z)
+  floor.reach.value = size.y * 0.35
   // the key light's shadow sits on top of the mirror, then the contact footprint on top of that
   scene.traverse((o) => { if (o.isMesh && o.material?.type === 'ShadowMaterial') { o.position.y = 0.003; o.material.opacity = 0.5; o.renderOrder = 2 } })
   const shadows = []; scene.traverse((o) => { if (o.isMesh && o.material?.type === 'ShadowMaterial') shadows.push(o.material) })
@@ -247,7 +320,7 @@ async function main() {
   // studio light for black paint: a softer key so the body stays black, and a cool rim light
   // that draws its edges against the black page, like Tesla's renders
   scene.traverse((o) => { if (o.isDirectionalLight && o.castShadow) o.intensity = 1.1 })
-  j.renderer.toneMappingExposure = 0.9
+  j.renderer.toneMappingExposure = 1.1
   const rim = new THREE.DirectionalLight(0xcfe0ff, 2.6); rim.position.set(-6, 2.6, -7); scene.add(rim)
   // day: a soft overhead sky light so the black paint reads glossy, with clean highlights, not a hole in the page
   const sky = new THREE.HemisphereLight(0xffffff, 0xd8d8dc, 0); scene.add(sky)
@@ -255,10 +328,10 @@ async function main() {
   const fill = []; scene.traverse((o) => { if (o.isDirectionalLight && !o.castShadow && o !== rim) fill.push([o, o.intensity]) })
 
   // night ↔ day: floor, shadows and lights cross-fade over 300 ms (instant the first time)
-  const lerp = (a, b, k) => a + (b - a) * k
   let themeK = 0, themeRaf = 0
   function paintTheme(k) {
     themeK = k
+    coat(k)
     mirror.material.uniforms.light.value = k
     contact.material.opacity = lerp(1, 0.5, k)
     for (const m of shadows) m.opacity = lerp(0.5, 0.18, k)
@@ -267,7 +340,7 @@ async function main() {
     rim.intensity = lerp(2.6, 1.2, k)
     sky.intensity = lerp(0, 0.9, k)
     scene.environmentIntensity = lerp(1, 1.5, k)
-    j.renderer.toneMappingExposure = lerp(0.9, 1.0, k)
+    j.renderer.toneMappingExposure = lerp(1.1, 1.0, k)
     j.kick()
   }
   let themed = false
@@ -282,14 +355,19 @@ async function main() {
   j.setTheme(wanted.theme === 'light' ? 'light' : 'dark'); shown.theme = wanted.theme === 'light' ? 'light' : 'dark'
   themed = true
 
-  // a closer camera: the Jeep fills its frame (about 15% bigger than the phone's fit), set a touch
-  // left of centre and up, so the roof strip on the right has its own room and there's no empty band on top
-  j.cam.zoom = Number(params.get('zoom')) || 1.22
+  // frame the whole car: the sphere fit (see fitView), shifted so it centres left of the roof strip
+  sphere = boundingSphere(j.root)
+  let viewName = 'hero'
+  const setView = j.setView
+  j.setView = (name, ms) => { viewName = name; setView(name, ms) }
   const frameCam = () => {
     const w = canvas.clientWidth, h = canvas.clientHeight
     if (!w || !h) return
-    j.cam.setViewOffset(w, h, w * 0.035, h * 0.03, w, h)
-    j.cam.updateProjectionMatrix(); j.kick()
+    j.cam.zoom = 1
+    j.cam.setViewOffset(w, h, STRIP_W / 2, 0, w, h)
+    j.cam.updateProjectionMatrix()
+    setView(viewName, 1)
+    j.kick()
   }
   frameCam(); new ResizeObserver(frameCam).observe(canvas)
 

@@ -9,7 +9,8 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const DOORS = { BL: 'Door', BR: 'Door_2', FL: 'Door_3', FR: 'Door_4' }
 
-export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
+// `fitView(name, view)`: optional; returns { d, y } to frame a view yourself (the CarPlay embed fits a sphere).
+export async function createJeep(canvas, { url, onProgress, onFrame, fitView } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -202,7 +203,7 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
   }
   // narrow (portrait) canvases: back the camera off so the whole Jeep stays in frame with air around it
   const fit = (v) => { const a = canvas.clientWidth / Math.max(1, canvas.clientHeight); return v.el > 80 || a >= 1 ? 1 : Math.min(2.4, 0.96 / a) }
-  const sph = (v) => { const az = THREE.MathUtils.degToRad(v.az), el = THREE.MathUtils.degToRad(v.el), d = v.d * fit(v); return new THREE.Vector3(Math.cos(el) * Math.sin(az) * d, Math.sin(el) * d + v.y, Math.cos(el) * Math.cos(az) * d) }
+  const sph = (v) => { const az = THREE.MathUtils.degToRad(v.az), el = THREE.MathUtils.degToRad(v.el), d = v.exact ? v.d : v.d * fit(v); return new THREE.Vector3(Math.cos(el) * Math.sin(az) * d, Math.sin(el) * d + v.y, Math.cos(el) * Math.cos(az) * d) }
   let view = 'hero'
   function setView(name, ms = 900) {
     view = name
@@ -221,6 +222,8 @@ export async function createJeep(canvas, { url, onProgress, onFrame } = {}) {
       v = dUp <= dSide ? { ...v, az: 180, d: dUp } : { ...v, az: -90, d: dSide }
       v.shift = front * (half - rear) / 2
     }
+    const own = fitView?.(name, v)
+    if (own) v = { ...v, ...own, shift: own.shift ?? 0, exact: true }
     const off = new THREE.Vector3(0, 0, v.shift || 0)
     const fromP = cam.position.clone(), toP = sph(v).add(off); const fromT = controls.target.clone(), toT = new THREE.Vector3(0, v.y, 0).add(off)
     tween(() => 0, (k) => { cam.position.lerpVectors(fromP, toP, k); controls.target.lerpVectors(fromT, toT, k) }, 1, ms, 'cam')

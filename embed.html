@@ -7,7 +7,7 @@
   <style>
     /* transparent page: the CarPlay panel's colour shows through */
     :root {
-      --dot: rgba(255, 255, 255, .26);
+      --dot: rgba(255, 255, 255, .18);
       --puck: rgba(28, 28, 30, .92);
       --puck-edge: rgba(255, 255, 255, .16);
       --puck-shadow: 0 6px 16px rgba(0, 0, 0, .6);
@@ -15,7 +15,7 @@
       --label: #F5F5F7;
     }
     :root[data-theme="light"] {
-      --dot: rgba(0, 0, 0, .2);
+      --dot: rgba(0, 0, 0, .14);
       --puck: #FFFFFF;
       --puck-edge: rgba(0, 0, 0, .08);
       --puck-shadow: 0 4px 12px rgba(0, 0, 0, .12);
@@ -23,26 +23,36 @@
       --label: #1C1C1E;
     }
     html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; -webkit-user-select: none; user-select: none; }
-    canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+    /* feathered on all four sides: the floor and its reflection fade out, never a hard rectangle */
+    canvas {
+      display: block; width: 100%; height: 100%; pointer-events: none;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 6%, #000 88%, transparent 100%),
+                          linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+      -webkit-mask-composite: source-in;
+      mask-image: linear-gradient(to bottom, transparent 0, #000 6%, #000 88%, transparent 100%),
+                  linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+      mask-composite: intersect;
+    }
 
-    /* the roof strip: a slim dotted track at the Jeep's right, a little Jeep-top thumb at the current step */
+    /* the roof strip hugs the Jeep's right side: its centre 22 px in from the edge, from 12% to 82%
+       of the height. The dotted track is exactly the thumb's travel: the puck's centre sits on its
+       first dot at "Top on" and on its last at "Doors off". */
     #strip {
-      --puck-h: 42px; --label-h: 16px;
-      position: absolute; right: 6px; top: 50%; width: 32px; height: min(78%, 230px);
-      transform: translateY(-50%); pointer-events: none;
+      --puck-h: 42px;
+      position: absolute; right: 0; width: 44px; top: 12%; height: 70%;
+      pointer-events: none;
       font: 600 10px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
     }
     #strip .track {
-      position: absolute; left: 6px; width: 20px; top: 0; bottom: var(--label-h);
+      /* two columns of dots, spaced so the first and last dot centres land on the track's ends */
+      position: absolute; left: 50%; width: 12px; top: -3px; bottom: -3px; transform: translateX(-50%);
       background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.3px);
-      background-size: 7px 7px; background-position: center;
-      -webkit-mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
-      mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
+      background-size: 6px 6px; background-repeat: space;
       transition: background-image 300ms ease;
     }
     #strip .thumb {
       position: absolute; left: 0; right: 0; top: 0;
-      transform: translateY(calc(var(--pos, 0) * (min(78vh, 230px) - var(--puck-h) - var(--label-h))));
+      transform: translateY(calc(var(--pos, 0) * 70vh - var(--puck-h) / 2));
       transition: transform 460ms cubic-bezier(.34, 1.32, .64, 1);   /* snaps with a little spring */
       will-change: transform;
     }
