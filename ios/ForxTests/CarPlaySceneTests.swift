@@ -163,10 +163,10 @@ struct CarPlaySceneTests {
         let list = try #require(fake.pushed.last as? CPListTemplate)
         let items = list.sections.flatMap(\.items).compactMap { $0 as? CPListItem }
         #expect(items.map(\.text) == [
-            "Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Trip",
+            "Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Trip", "Settings",
         ])
         let tappable = items.filter { $0.handler != nil }
-        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate"])
+        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Settings"])
         for item in tappable {
             item.handler?(item) { rec.completions += 1 }
         }
