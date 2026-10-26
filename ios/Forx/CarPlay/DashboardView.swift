@@ -306,10 +306,13 @@ struct DashboardView: View {
                         .frame(width: 6, height: 6)
                         .shadow(color: tint, radius: 4)
                         .accessibilityHidden(true)
-                    let lock = Text(word).foregroundStyle(theme.text)
-                    let roof = Text(" · " + model.roofWord).foregroundStyle(theme.secondary)
-                    Text("\(lock)\(roof)")
-                        .minimumScaleFactor(0.8)
+                    // Two Texts, not one interpolated Text: SwiftUI didn't redraw the
+                    // interpolated one when only the roof word changed.
+                    HStack(spacing: 0) {
+                        Text(word).foregroundStyle(theme.text)
+                        Text(" · " + model.roofWord).foregroundStyle(theme.secondary)
+                    }
+                    .minimumScaleFactor(0.8)
                 }
             } else {
                 Text(model.roofWord)
