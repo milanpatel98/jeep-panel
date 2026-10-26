@@ -61,6 +61,8 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
     let statusTint: CarPlayTint?
     /// The roof, for the status line: "Top on", "Panels off", "Top off" or "Doors off".
     let roofWord: String
+    /// The roof key ("on", "panels", "off", "doorsOff"), for the roof icon.
+    let roofKey: String
     let message: String?
     let buttons: [CarPlayButton]
     let more: [CarPlayRow]
@@ -120,6 +122,7 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
             statusSymbol: status?.symbol,
             statusTint: status?.tint,
             roofWord: roofTitle(roof),
+            roofKey: roof,
             message: message,
             buttons: signedIn ? buttonRow(s, pending: pending, climateOn: climateOn, roof: roof) : [],
             more: moreRows(s, roof: roof, now: now, timeZone: timeZone),

@@ -418,61 +418,26 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }
     }
 
-    /// A 20 pt top-view Jeep, nose up: a 12 × 20 rounded body, the windshield line, and the roof
-    /// for `roof`. Top on: the roof filled. Panels: the roof outlined, its rear half filled (the
-    /// front two panels are out). Top off: the roof outlined. Doors off: the roof outlined and the
-    /// body's sides open where the doors were.
-    static func roofGlyph(_ roof: String, colour: UIColor) -> UIImage {
-        let side: CGFloat = 20
+    /// The roof icon's asset ("roof-on", "roof-panels", "roof-off", "roof-doors"): Milan's Jeep's
+    /// own top-view icons, white on clear, used as templates.
+    static func roofAsset(_ roof: String) -> String {
+        switch roof {
+        case "panels": "roof-panels"
+        case "off": "roof-off"
+        case "doorsOff": "roof-doors"
+        default: "roof-on"
+        }
+    }
+
+    /// The top-view Jeep for `roof`, 26 pt tall, in `colour`.
+    static func roofGlyph(_ roof: String, colour: UIColor, height: CGFloat = 26) -> UIImage {
+        guard let art = UIImage(named: roofAsset(roof)) else { return UIImage() }
+        let size = CGSize(width: (art.size.width * height / max(1, art.size.height)).rounded(), height: height)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 3
-        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { context in
-            let cg = context.cgContext
-            colour.setStroke()
-            colour.setFill()
-            let line: CGFloat = 1.5
-            // body 12 × 20, its stroke inside the 20 pt square
-            let body = CGRect(x: 4, y: 0, width: 12, height: 20).insetBy(dx: line / 2, dy: line / 2)
-            let bodyPath = UIBezierPath(roundedRect: body, cornerRadius: 3.5)
-            bodyPath.lineWidth = line
-            if roof == "doorsOff" {
-                // leave the sides open from the windshield to the rear wheel
-                cg.saveGState()
-                let clip = UIBezierPath(rect: CGRect(x: 0, y: 0, width: side, height: side))
-                clip.append(UIBezierPath(rect: CGRect(x: 2, y: 6.5, width: 3.5, height: 8)))
-                clip.append(UIBezierPath(rect: CGRect(x: 14.5, y: 6.5, width: 3.5, height: 8)))
-                clip.usesEvenOddFillRule = true
-                clip.addClip()
-                bodyPath.stroke()
-                cg.restoreGState()
-            } else {
-                bodyPath.stroke()
-            }
-            // windshield
-            let glass = UIBezierPath()
-            glass.move(to: CGPoint(x: 6, y: 6))
-            glass.addLine(to: CGPoint(x: 14, y: 6))
-            glass.lineWidth = line
-            glass.lineCapStyle = .round
-            glass.stroke()
-            // the roof, windshield to the rear
-            let top = CGRect(x: 6.5, y: 7.5, width: 7, height: 9.5)
-            switch roof {
-            case "on":
-                UIBezierPath(roundedRect: top, cornerRadius: 1.5).fill()
-            case "panels":
-                let outline = UIBezierPath(roundedRect: top.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1.5)
-                outline.lineWidth = 1
-                outline.stroke()
-                let rear = CGRect(x: top.minX, y: top.midY, width: top.width, height: top.height / 2)
-                UIBezierPath(roundedRect: rear, cornerRadius: 1.5).fill()
-            default:
-                let outline = UIBezierPath(roundedRect: top.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1.5)
-                outline.lineWidth = 1
-                outline.stroke()
-            }
-        }
-        return image.withRenderingMode(.alwaysOriginal)
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            art.withTintColor(colour, renderingMode: .alwaysOriginal).draw(in: CGRect(origin: .zero, size: size))
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     /// The round tile behind a glyph (see `tile(symbol:state:dark:)`).
