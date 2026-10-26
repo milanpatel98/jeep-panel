@@ -132,11 +132,12 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
 
     // MARK: Left panel
 
-    /// One word and a glyph. An open door wins, then the tailgate, then the lock. Unknown → nil.
+    /// One word and a glyph (`jeep-…` names are Milan's Jeep's own icons in the asset catalogue; the
+    /// rest are SF Symbols). An open door wins, then the tailgate, then the lock. Unknown → nil.
     private static func statusLine(_ s: JeepSnapshot?) -> (word: String, symbol: String, tint: CarPlayTint)? {
         guard let s else { return nil }
-        if !s.doorsOpen.isEmpty { return ("Door open", "door.left.hand.open", .amber) }
-        if s.tailgateOpen == true { return ("Tailgate open", "car.side.rear.open.fill", .amber) }
+        if !s.doorsOpen.isEmpty { return ("Door open", "jeep-door-open", .amber) }
+        if s.tailgateOpen == true { return ("Tailgate open", "jeep-tailgate-open", .amber) }
         if s.locked == false { return ("Unlocked", "lock.open.fill", .amber) }
         if s.locked == true { return ("Locked", "lock.fill", .green) }
         return nil

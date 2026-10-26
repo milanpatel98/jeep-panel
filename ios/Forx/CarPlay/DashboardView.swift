@@ -303,10 +303,22 @@ struct DashboardView: View {
             } else {
                 HStack(spacing: 14) {
                     if let symbol = model.statusSymbol {
-                        Image(systemName: symbol)
-                            .font(.system(size: l.statusFont * 1.25, weight: .semibold))
-                            .foregroundStyle(DashboardTheme.tint(model.statusTint))
-                            .accessibilityLabel(model.statusWord ?? "")
+                        Group {
+                            if symbol.hasPrefix("jeep-") {
+                                // the Jeep's own icons: the top view as tall as the roof icon,
+                                // the side views shorter (they're wide)
+                                Image(symbol)
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: symbol == "jeep-door-open" ? l.statusFont * 2 : l.statusFont * 1.15)
+                            } else {
+                                Image(systemName: symbol)
+                                    .font(.system(size: l.statusFont * 1.25, weight: .semibold))
+                            }
+                        }
+                        .foregroundStyle(DashboardTheme.tint(model.statusTint))
+                        .accessibilityLabel(model.statusWord ?? "")
                     }
                     Image(CarPlayTemplates.roofAsset(model.roofKey))
                         .renderingMode(.template)
