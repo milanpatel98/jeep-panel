@@ -1,5 +1,8 @@
 import CarPlay
+import os
 import UIKit
+
+private let panLog = Logger(subsystem: "com.milanpatel.Forx", category: "pan")
 
 /// What the templates need from CarPlay's interface controller; tests fake it.
 protocol CarPlayInterface {
@@ -154,6 +157,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     /// CarPlay sends these on touch screens without panning mode; the map never pans.
     func mapTemplateDidBeginPanGesture(_ mapTemplate: CPMapTemplate) {
+        panLog.notice("pan began")
         spin?.began()
     }
 
@@ -164,6 +168,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     }
 
     func mapTemplate(_ mapTemplate: CPMapTemplate, didEndPanGestureWithVelocity velocity: CGPoint) {
+        panLog.notice("pan ended")
         spin?.ended(velocity)
     }
 
