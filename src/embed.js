@@ -332,7 +332,7 @@ async function main() {
   }
   frameCam(); new ResizeObserver(frameCam).observe(canvas)
 
-  jeep = j
+  jeep = j; window.__jeep = j
   setYaw(yaw)
   sync()
 
