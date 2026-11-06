@@ -1,3 +1,4 @@
+import CarPlay
 import CoreGraphics
 import Foundation
 import Observation
@@ -45,17 +46,47 @@ nonisolated struct CarPlayPan: Sendable, Equatable {
     }
 }
 
+// MARK: - Pan arrows (pure, tested)
+
+/// The panning interface's arrows (Spin mode): right turns the Jeep clockwise seen from above
+/// (drag right), left the other way. Up, down, nothing, or several at once: no turn.
+nonisolated enum CarPlaySpinArrows {
+    static func turn(_ direction: CPMapTemplate.PanDirection) -> Double? {
+        switch direction {
+        case .right: 1.0
+        case .left: -1.0
+        default: nil
+        }
+    }
+}
+
 // MARK: - Drag → 3D Jeep
 
-/// Carries CarPlay's pan callbacks (from `CarPlayTemplates`) to the 3D Jeep page
-/// (`JeepEmbedView` sets `send`): a sideways drag turns the Jeep.
+/// Carries CarPlay's pan input (from `CarPlayTemplates`) to the 3D Jeep page (`JeepEmbedView`
+/// sets `send`). Two routes: a sideways drag on a touch screen turns the Jeep 1:1 (`began` /
+/// `changed` / `ended`), and the panning interface's arrows turn it in steps (`step`, `hold`).
 final class DashboardSpin {
     /// Runs `window.jeepEmbed.<call>` on the page; nil until the page's view is up.
     var send: ((String) -> Void)?
 
+    /// A momentary arrow press: `stepDegrees` over `stepTicks` frames (about 130 ms).
+    static let stepDegrees: Double = 20
+    static let stepTicks = 8
+    static let tick: Duration = .milliseconds(16)
+    /// An arrow held down: this fast, at `holdHz`, until it's released.
+    static let holdDegreesPerSecond: Double = 90
+    static let holdHz: Double = 30
+    static var holdInterval: Duration { .milliseconds(Int(1000 / holdHz)) }
+    /// Degrees per tick while an arrow is held (3° at 30 Hz).
+    static var holdDegreesPerTick: Double { holdDegreesPerSecond / holdHz }
+
     private var pan: CarPlayPan?
+    /// The running arrow step or hold, if any.
+    private var stepper: Task<Void, Never>? = nil
 
     init() {}
+
+    // MARK: Drags
 
     func began() {
         pan = CarPlayPan()
@@ -73,6 +104,52 @@ final class DashboardSpin {
         guard var p = pan else { return }
         pan = nil
         if let action = p.end(velocity: velocity) { perform(action) }
+    }
+
+    // MARK: Arrows
+
+    /// An arrow pressed momentarily: turns the Jeep a step, the first frame now, then lets go.
+    func step(_ sign: Double) {
+        stepper?.cancel()
+        let per = Self.stepDegrees / Double(Self.stepTicks) * sign
+        perform(.spin(per))
+        stepper = Task { [weak self] in
+            for _ in 1..<Self.stepTicks {
+                try? await Task.sleep(for: Self.tick)
+                guard !Task.isCancelled else { return }
+                self?.perform(.spin(per))
+            }
+            guard !Task.isCancelled else { return }
+            self?.perform(.release)
+        }
+    }
+
+    /// An arrow held down: keeps turning until `holdEnded`.
+    func hold(_ sign: Double) {
+        stepper?.cancel()
+        let per = Self.holdDegreesPerTick * sign
+        perform(.spin(per))
+        stepper = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.holdInterval)
+                guard !Task.isCancelled else { return }
+                self?.perform(.spin(per))
+            }
+        }
+    }
+
+    func holdEnded() {
+        stepper?.cancel()
+        stepper = nil
+        perform(.release)
+    }
+
+    /// Spin mode is over: anything running stops and the Jeep glides back to its 3/4 view.
+    func settle() {
+        stepper?.cancel()
+        stepper = nil
+        pan = nil
+        perform(.release)
     }
 
     private func perform(_ action: CarPlayPan.Action) {

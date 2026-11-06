@@ -62,9 +62,10 @@ struct CarPlaySceneTests {
         #expect(fake.roots.first === t.mapTemplate)
         #expect(t.mapTemplate.mapButtons.count == 4)
         #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
-        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 1)  // Apps; Settings is in More
+        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)  // Search
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)  // Spin, Apps; Settings is in More
         #expect(t.mapTemplate.automaticallyHidesNavigationBar)
+        #expect(!t.mapTemplate.hidesButtonsWithNavigationBar)
 
         // The same model again reassigns nothing (no flicker).
         let mapBefore = t.mapTemplate.mapButtons
@@ -179,14 +180,15 @@ struct CarPlaySceneTests {
         let fake = FakeCarPlayInterface()
         let t = make(fake, Recorder())
         t.update(model(snap()))
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 1)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
         t.toggleTray()
         #expect(t.tray.isOpen)
         #expect(t.shownButtons.isEmpty)
         #expect(t.shownApps.map(\.title) == ["YouTube Music", "Spotify", "Apple Music", "Apple Maps"])
         #expect(t.mapTemplate.mapButtons.count == 4)
-        // "All apps" joins Search on the leading side
+        // "All apps" joins Search on the leading side; Spin and Apps stay trailing
         #expect(t.mapTemplate.leadingNavigationBarButtons.count == 2)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
         // The same state again reassigns nothing.
         let before = t.mapTemplate.mapButtons
         t.update(model(snap()))
@@ -229,6 +231,81 @@ struct CarPlaySceneTests {
         let grid = try #require(fake.pushed.last as? CPGridTemplate)
         #expect(grid.gridButtons.count == 8)
         #expect(grid.gridButtons.map { $0.titleVariants.first ?? "" } == CarPlayModel.appList.map(\.title))
+    }
+
+    @Test func spinModeShowsDoneAndTurnsWithTheArrows() {
+        let fake = FakeCarPlayInterface()
+        var calls: [String] = []
+        let spin = DashboardSpin()
+        spin.send = { calls.append($0) }
+        let t = CarPlayTemplates(
+            interface: fake, open: { _ in }, perform: { _ in }, setRoof: { _ in }, email: { nil }, spin: spin)
+
+        // Not before the first model, and not signed out.
+        t.startSpinMode()
+        #expect(!t.spinMode)
+        t.update(model(snap(), signedIn: false))
+        t.startSpinMode()
+        #expect(!t.spinMode)
+
+        t.update(model(snap()))
+        t.tray.open()
+        t.startSpinMode()
+        #expect(t.spinMode)
+        #expect(!t.tray.isOpen)
+        #expect(!t.mapTemplate.automaticallyHidesNavigationBar)
+        #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.map(\.title) == ["Done"])
+        #expect(t.mapTemplate.mapButtons.count == 4)  // CarPlay itself shows only the first two
+        #expect(fake.pushed.isEmpty)  // the map template stays; nothing is pushed
+
+        // The arrows: a press steps, up and down do nothing, a hold runs until released.
+        t.mapTemplate(t.mapTemplate, panWith: .right)
+        #expect(calls == ["spin(2.5)"])
+        t.mapTemplate(t.mapTemplate, panWith: .up)
+        #expect(calls.count == 1)
+        t.mapTemplate(t.mapTemplate, panBeganWith: .left)
+        #expect(calls.last == "spin(-3.0)")
+        t.mapTemplate(t.mapTemplate, panEndedWith: .left)
+        #expect(calls.last == "release()")
+
+        // Done (its handler is `endSpinMode`): the bars come back and the Jeep is let go.
+        calls = []
+        t.endSpinMode()
+        #expect(!t.spinMode)
+        #expect(calls == ["release()"])
+        #expect(t.mapTemplate.automaticallyHidesNavigationBar)
+        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
+
+        // CarPlay taking the panning interface down itself ends it too.
+        t.startSpinMode()
+        #expect(t.spinMode)
+        t.mapTemplateDidDismissPanningInterface(t.mapTemplate)
+        #expect(!t.spinMode)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
+
+        // Signing out ends it.
+        t.startSpinMode()
+        t.update(model(snap(), signedIn: false))
+        #expect(!t.spinMode)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 1)  // Settings only
+    }
+
+    @Test func spinModeEndsWhenIdle() async throws {
+        let t = CarPlayTemplates(
+            interface: FakeCarPlayInterface(), open: { _ in }, perform: { _ in }, setRoof: { _ in }, email: { nil },
+            spinIdleTimeout: .milliseconds(150))
+        t.update(model(snap()))
+        t.startSpinMode()
+        #expect(t.spinMode)
+        try await Task.sleep(for: .milliseconds(80))
+        t.mapTemplate(t.mapTemplate, panWith: .left)  // any arrow rearms the clock
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(t.spinMode)  // 180 ms in, but only 100 since the arrow
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(!t.spinMode)
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
     }
 
     @Test func appearanceRedrawsTiles() {

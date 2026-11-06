@@ -60,7 +60,11 @@ enum CarPlayDebug {
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the
 /// More list, the Apps grid and Settings, pushed on tap. The Apps button opens the tray: the
 /// map buttons become the four favourite apps until one opens, a command runs, or 8 s pass.
-/// Sideways drags on the map turn the 3D Jeep (`spin`); the Roof button steps the roof.
+/// The 3D Jeep turns two ways: a sideways drag on cars whose touch screen sends drags to
+/// CarPlay, and Spin mode (the bar button with the turning arrows) for every other car and the
+/// Xcode simulator, which deliver no drags: it opens CarPlay's panning interface, whose left and
+/// right arrows turn the Jeep (press: a step; hold: it keeps turning). Done, 8 s without a
+/// touch, or signing out ends it; the map never pans. The Roof button steps the roof.
 @MainActor
 final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     let mapTemplate = CPMapTemplate()
@@ -71,6 +75,11 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private(set) var shownApps: [CarPlayApp] = []
     let tray: AppTray
     let spin: DashboardSpin?
+    /// Spin mode: the panning interface is up and its arrows turn the Jeep.
+    private(set) var spinMode = false
+    /// Spin mode ends after this long without an arrow or a drag.
+    let spinIdleTimeout: Duration
+    private var spinIdle: Task<Void, Never>? = nil
     /// What the map buttons were last drawn for, so an unchanged state reassigns nothing.
     private var mapKey: MapKey?
 
@@ -92,6 +101,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private struct BarsKey: Equatable {
         let signedIn: Bool
         let trayOpen: Bool
+        let spinMode: Bool
     }
     /// The rows / settings the on-screen lists were last filled with.
     private var moreListRows: [CarPlayRow] = []
@@ -116,13 +126,15 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         setRoof: @escaping (String) -> Void = { AppModel.roof = $0 },
         email: @escaping () -> String? = { AppModel.store.email },
         tray: AppTray = AppTray(),
-        spin: DashboardSpin? = nil
+        spin: DashboardSpin? = nil,
+        spinIdleTimeout: Duration = .seconds(8)
     ) {
         self.interface = interface
         self.open = open
         self.perform = perform
         self.tray = tray
         self.spin = spin
+        self.spinIdleTimeout = spinIdleTimeout
         self.setRoof = setRoof
         self.email = email
         super.init()
@@ -155,9 +167,12 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     // MARK: Drags → 3D Jeep
 
-    /// CarPlay sends these on touch screens without panning mode; the map never pans.
+    /// Touch-screen drags, with or without the panning interface. Apple: "May not be called when
+    /// connected to some CarPlay systems"; the Xcode simulator's CarPlay window sends none, so
+    /// Spin mode's arrows are the sure route. The map never pans.
     func mapTemplateDidBeginPanGesture(_ mapTemplate: CPMapTemplate) {
         panLog.notice("pan began")
+        spinIdle?.cancel()
         spin?.began()
     }
 
@@ -170,6 +185,77 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     func mapTemplate(_ mapTemplate: CPMapTemplate, didEndPanGestureWithVelocity velocity: CGPoint) {
         panLog.notice("pan ended")
         spin?.ended(velocity)
+        if spinMode { armSpinIdle() }
+    }
+
+    // MARK: Spin mode (the panning interface) → 3D Jeep
+
+    /// The Spin bar button: opens CarPlay's panning interface. Its arrows turn the Jeep; the bar
+    /// shows Done. CarPlay keeps at most two map buttons visible meanwhile (Lock and Climate).
+    func startSpinMode() {
+        guard !spinMode, let model, model.signedIn else { return }
+        panLog.notice("spin mode on")
+        spinMode = true
+        tray.close()
+        mapTemplate.automaticallyHidesNavigationBar = false  // Done stays on screen
+        mapTemplate.showPanningInterface(animated: true)
+        update(model, dark: mapKey?.dark ?? true)
+        armSpinIdle()
+    }
+
+    /// Done, idle, sign-out, or CarPlay took the panning interface down itself.
+    func endSpinMode() {
+        guard spinMode else { return }
+        leaveSpinMode()
+        if let model { update(model, dark: mapKey?.dark ?? true) }
+    }
+
+    /// The state change alone; the caller refreshes the bars.
+    private func leaveSpinMode() {
+        panLog.notice("spin mode off")
+        spinMode = false
+        spinIdle?.cancel()
+        spinIdle = nil
+        spin?.settle()
+        mapTemplate.automaticallyHidesNavigationBar = true
+        mapTemplate.dismissPanningInterface(animated: true)  // nothing if it's already gone
+    }
+
+    private func armSpinIdle() {
+        spinIdle?.cancel()
+        spinIdle = Task { [weak self, timeout = spinIdleTimeout] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            self?.endSpinMode()
+        }
+    }
+
+    func mapTemplateDidShowPanningInterface(_ mapTemplate: CPMapTemplate) {
+        panLog.notice("panning interface shown")
+    }
+
+    func mapTemplateDidDismissPanningInterface(_ mapTemplate: CPMapTemplate) {
+        panLog.notice("panning interface dismissed")
+        endSpinMode()
+    }
+
+    /// An arrow pressed momentarily: one step.
+    func mapTemplate(_ mapTemplate: CPMapTemplate, panWith direction: CPMapTemplate.PanDirection) {
+        guard let sign = CarPlaySpinArrows.turn(direction) else { return }
+        spin?.step(sign)
+        if spinMode { armSpinIdle() }
+    }
+
+    /// An arrow held: it keeps turning until released.
+    func mapTemplate(_ mapTemplate: CPMapTemplate, panBeganWith direction: CPMapTemplate.PanDirection) {
+        guard let sign = CarPlaySpinArrows.turn(direction) else { return }
+        spinIdle?.cancel()
+        spin?.hold(sign)
+    }
+
+    func mapTemplate(_ mapTemplate: CPMapTemplate, panEndedWith direction: CPMapTemplate.PanDirection) {
+        spin?.holdEnded()
+        if spinMode { armSpinIdle() }
     }
 
     // MARK: Model → templates
@@ -181,6 +267,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         self.model = model
         let trayOpen = model.signedIn && tray.isOpen
         if !model.signedIn && tray.isOpen { tray.close() }
+        if !model.signedIn && spinMode { leaveSpinMode() }  // the bars follow below
         let buttons = model.signedIn ? Array(model.buttons.prefix(Self.maxMapButtons)) : []
         let key = MapKey(buttons: buttons, dark: dark, trayOpen: trayOpen)
         if key != mapKey {
@@ -200,7 +287,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             }
         }
 
-        let bars = BarsKey(signedIn: model.signedIn, trayOpen: trayOpen)
+        let bars = BarsKey(signedIn: model.signedIn, trayOpen: trayOpen, spinMode: spinMode)
         if bars != barsKey {
             barsKey = bars
             setBarButtons(bars)
@@ -221,7 +308,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     private func setBarButtons(_ key: BarsKey) {
         if CarPlayDebug.skipBarButtons { return }
-        if key.signedIn {
+        if key.spinMode {
+            // CarPlay provides no way out of the panning interface; the app must.
+            mapTemplate.leadingNavigationBarButtons = []
+            mapTemplate.trailingNavigationBarButtons = [
+                CPBarButton(title: "Done") { [weak self] _ in self?.endSpinMode() },
+            ]
+        } else if key.signedIn {
             var leading = [barButton("magnifyingglass") { $0.tapSearch() }]
             // In tray mode: the full grid of apps, one tap away.
             if key.trayOpen {
@@ -229,7 +322,9 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             }
             mapTemplate.leadingNavigationBarButtons = leading
             mapTemplate.trailingNavigationBarButtons = [
-                // filled while the tray is open
+                // Spin: turn the Jeep with CarPlay's pan arrows
+                barButton("rotate.3d") { $0.startSpinMode() },
+                // Apps: filled while the tray is open
                 barButton(key.trayOpen ? "square.grid.3x3.fill" : "square.grid.3x3") { $0.toggleTray() },
             ]  // Settings lives at the bottom of More
         } else {

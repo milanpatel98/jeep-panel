@@ -1,3 +1,4 @@
+import CarPlay
 import CoreGraphics
 import Foundation
 import Testing
@@ -52,5 +53,68 @@ struct DashboardSpinTests {
         spin.changed(CGPoint(x: 0, y: 130))
         spin.ended(.zero)
         #expect(calls.isEmpty)
+    }
+
+    @Test func arrowStepTurnsNowThenLetsGo() async throws {
+        var calls: [String] = []
+        let spin = DashboardSpin()
+        spin.send = { calls.append($0) }
+
+        spin.step(1)
+        #expect(calls == ["spin(2.5)"])  // the first frame right away
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(calls.count == DashboardSpin.stepTicks + 1)
+        #expect(calls.dropLast().allSatisfy { $0 == "spin(2.5)" })
+        #expect(calls.last == "release()")
+
+        // left turns the other way; a second press cuts the first short
+        calls = []
+        spin.step(-1)
+        spin.step(-1)
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(calls.first == "spin(-2.5)")
+        #expect(calls.filter { $0 == "release()" }.count == 1)
+        #expect(calls.count <= 2 * DashboardSpin.stepTicks + 1)
+    }
+
+    @Test func heldArrowTurnsUntilReleased() async throws {
+        var calls: [String] = []
+        let spin = DashboardSpin()
+        spin.send = { calls.append($0) }
+
+        spin.hold(-1)
+        #expect(calls == ["spin(-3.0)"])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(calls.count >= 3)
+        #expect(calls.allSatisfy { $0 == "spin(-3.0)" })
+
+        spin.holdEnded()
+        #expect(calls.last == "release()")
+        let after = calls.count
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(calls.count == after)  // nothing runs on
+    }
+
+    @Test func settleStopsEverythingAndLetsGo() async throws {
+        var calls: [String] = []
+        let spin = DashboardSpin()
+        spin.send = { calls.append($0) }
+
+        spin.hold(1)
+        spin.settle()
+        #expect(calls == ["spin(3.0)", "release()"])
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(calls.count == 2)
+    }
+}
+
+struct CarPlaySpinArrowsTests {
+    @Test func onlyLeftAndRightTurn() {
+        #expect(CarPlaySpinArrows.turn(.right) == 1)
+        #expect(CarPlaySpinArrows.turn(.left) == -1)
+        #expect(CarPlaySpinArrows.turn(.up) == nil)
+        #expect(CarPlaySpinArrows.turn(.down) == nil)
+        #expect(CarPlaySpinArrows.turn([]) == nil)
+        #expect(CarPlaySpinArrows.turn([.left, .right]) == nil)
     }
 }
