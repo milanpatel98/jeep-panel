@@ -42,4 +42,15 @@ Personal project, not affiliated with Jeep or Stellantis.
 
 Code: MIT. The 3D model: CC BY-NC-SA 4.0 (see Credits).
 
-© 2026 Milan Patel
+---
+
+<p align="center">
+  <a href="https://www.theneuralhorn.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/neural-horn-white.svg">
+      <img src="docs/brand/neural-horn-black.svg" alt="The Neural Horn" height="22">
+    </picture>
+  </a>
+  <br>
+  <sub>© 2026 The Neural Horn</sub>
+</p>
