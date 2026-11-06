@@ -123,12 +123,9 @@ export async function createJeep(canvas, { url, onProgress, onFrame, fitView } =
   anchors.seatFL = new THREE.Vector3(0.38 * sx, 1.05, front * 0.2); anchors.seatFR = new THREE.Vector3(-0.38 * sx, 1.05, front * 0.2)
   anchors.seatBL = new THREE.Vector3(0.48 * sx, 1.05, front * -0.62); anchors.seatBM = new THREE.Vector3(0, 1.05, front * -0.62); anchors.seatBR = new THREE.Vector3(-0.48 * sx, 1.05, front * -0.62)
   anchors.wheel = new THREE.Vector3(0.4 * sx, 1.15, front * 0.74)
-  // the charge port: a 4xe's sits on the driver's side front fender, ahead of the door
-  // the charge port: a 4xe's sits on the driver's side front fender, ahead of the door (this
-  // model's steering wheel is on its −x side); `chargeOut` is a point outside it, to tell which
-  // way its call-out should point
-  anchors.charge = new THREE.Vector3(-1.0, 0.98, front * 1.42)
-  anchors.chargeOut = new THREE.Vector3(-1.8, 0.98, front * 1.42)
+  // the charge port: a 4xe's sits on the driver's side front fender, ahead of the driver's door
+  // (the steering wheel is on this model's +x side, with the front doors' FL)
+  anchors.charge = new THREE.Vector3(1.0 * sx, 0.98, front * 1.42)
   // labels on parts that swing ride along with them
   const hinged = { FL: doors.FL.hinge, FR: doors.FR.hinge, BL: doors.BL.hinge, BR: doors.BR.hinge, hood: hood.hinge, gate: gate.hinge }
   const onHinge = {}

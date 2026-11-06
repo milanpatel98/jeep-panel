@@ -288,15 +288,15 @@ function placeOverlay() {
   const ch = el('charge', 'co charge', '')
   const port = charge && callouts ? anchor('charge') : null
   if (port?.visible) {
-    // the line points out of the car's side, away from the body
-    const out = anchor('chargeOut')
-    const left = out ? out.x < port.x : port.x < centreX
-    const x2 = left ? port.x - 30 : port.x + 30
-    line([[port.x, port.y], [x2, port.y]])
+    // a hairline up from the port (it clears the hood on the far side too), the bolt and the
+    // words beside its top, on the outer side
+    const left = port.x < centreX
+    const c = calloutLayout(port, { left, rise: 40 })
+    line(c.line)
     const [head, ...rest] = String(charge).split(' · ')
     const html = `${BOLT_SVG}<b>${head}</b>${rest.length ? `<small>${rest.join(' · ')}</small>` : ''}`
     if (ch.innerHTML !== html) ch.innerHTML = html
-    place(ch, left ? x2 - 5 : x2 + 5, port.y - 9, left ? 'right' : 'left', true)
+    place(ch, c.label.x, c.label.y - 2, c.label.align, true)
   } else ch.classList.add('hide')
 
   // tires: four pressures at the wheels

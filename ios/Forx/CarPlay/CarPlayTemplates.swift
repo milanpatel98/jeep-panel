@@ -43,6 +43,18 @@ enum CarPlayDebug {
     static var demo: Bool { mode?.hasPrefix("demo") == true }
     static var demoOpen: Bool { demo && mode?.contains("open") == true }
     static var forceDay: Bool { demo && mode?.contains("day") == true }
+    /// Demo words that put the screen into a state at launch, for screenshots without a tap:
+    /// `map` (Earth open), `tray` (the Apps tray), `turntable` / `tires` (the Jeep views),
+    /// `roof=panels|off|doorsOff`. Example: `demo-open-map-day`.
+    static var demoWords: [String] { demo ? (mode ?? "").split(separator: "-").map(String.init) : [] }
+    static var demoMap: Bool { demoWords.contains("map") }
+    static var demoTray: Bool { demoWords.contains("tray") }
+    static var demoMode: JeepMode? {
+        demoWords.contains("turntable") ? .turntable : demoWords.contains("tires") ? .tires : nil
+    }
+    static var demoRoof: String? {
+        demoWords.first { $0.hasPrefix("roof=") }.map { String($0.dropFirst(5)) }
+    }
 
     /// The demo Jeep (`FORX_CP=demo…`, Debug only): nil otherwise.
     static func demoSnapshot(now: Date = Date()) -> JeepSnapshot? {

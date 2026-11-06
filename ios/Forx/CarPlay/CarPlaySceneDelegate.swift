@@ -56,6 +56,15 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         observe()
         startTicker()
+        #if DEBUG
+        // demo states for screenshots (FORX_CP=demo-…): applied as the buttons would
+        if CarPlayDebug.demo {
+            if let roof = CarPlayDebug.demoRoof { AppModel.roof = roof }
+            if let mode = CarPlayDebug.demoMode { motion.mode = mode }
+            if CarPlayDebug.demoMap { templates?.setMap(open: true) }
+            if CarPlayDebug.demoTray { templates?.toggleTray() }
+        }
+        #endif
         motionObserver = NotificationCenter.default.addObserver(
             forName: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
