@@ -2,6 +2,7 @@ import './style.css'
 import { createJeep } from './jeep.js'
 import { state, set, subscribe, isNight, attention } from './state.js'
 import { I } from './icons.js'
+import { neuralHorn } from './neuralHorn.js'
 
 const $ = (s, el = document) => el.querySelector(s)
 const $$ = (s, el = document) => [...el.querySelectorAll(s)]
@@ -284,3 +285,6 @@ subscribe((s, patch) => {
 // ---------- go ----------
 route(); render()
 addEventListener('resize', () => { sheet.style.transform = ''; if (!wide.matches) return; sheet.classList.remove('open', 'closed') })
+
+// The Neural Horn copyright at the foot of About
+document.getElementById('nh-foot')?.append(neuralHorn('jp-nh'))

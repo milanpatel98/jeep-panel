@@ -195,6 +195,14 @@ a.row:hover::after { right: 18px; }
 .seg-btn[aria-checked="true"] { background: var(--text); color: var(--bg); }
 .hint { margin-top: 14px; font-size: 13px; color: var(--text-3); text-align: center; }
 
+/* The Neural Horn copyright under About: quiet grey like the hints; on hover the horn
+   picks up the app's green, the colour every control turns when it's on. */
+.nh-foot { margin-top: 22px; text-align: center; }
+.jp-nh { font-size: 13px; color: var(--text-3); transition: color var(--t) var(--ease); }
+.jp-nh .nh-mark { height: 12px; color: var(--text-2); transition: transform .45s var(--ease), color var(--t) var(--ease); }
+.jp-nh:hover, .jp-nh:focus-visible { color: var(--text-2); outline: none; }
+.jp-nh:hover .nh-mark, .jp-nh:focus-visible .nh-mark { color: var(--green); }
+
 /* climate: one line of fact, one row of control */
 .climate-sub { text-align: center; font-size: 14px; color: var(--text-2); margin: 6px 0 10px; }
 .strip { display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; }
