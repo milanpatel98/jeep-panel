@@ -585,12 +585,12 @@ async function main() {
     mirror.material.uniforms.light.value = k
     contact.material.opacity = lerp(1, 0.5, k)
     for (const m of shadows) m.opacity = lerp(0.5, 0.18, k)
-    for (const l of key) l.intensity = lerp(1.1, 2.4, k) + lift * 1.2
-    for (const [l, i] of fill) l.intensity = i * lerp(1, 2.2, k)
+    for (const l of key) l.intensity = lerp(1.1, 2.4, k) + lift * 1.8
+    for (const [l, i] of fill) l.intensity = i * lerp(1, 2.2, k) * (1 + lift * 0.6)
     rim.intensity = lerp(2.6, 1.2, k)
-    sky.intensity = lerp(0, 0.9, k) + lift * 0.7
-    scene.environmentIntensity = lerp(1, 1.5, k) + lift * 0.6
-    j.renderer.toneMappingExposure = lerp(1.1, 1.0, k) + lift * 0.3
+    sky.intensity = lerp(0, 0.9, k) + lift * 1.1
+    scene.environmentIntensity = lerp(1, 1.5, k) + lift * 0.9
+    j.renderer.toneMappingExposure = lerp(1.1, 1.0, k) + lift * 0.4
     j.kick()
   }
   j.setLift = (to) => {
