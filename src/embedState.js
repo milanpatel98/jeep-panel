@@ -76,3 +76,77 @@ export function boxCorners(min, max) {
   for (const x of [min[0], max[0]]) for (const y of [min[1], max[1]]) for (const z of [min[2], max[2]]) out.push([x, y, z])
   return out
 }
+
+// ---------- v2: the overlay (call-outs, roof strip, tires), the car's region and the views ----------
+
+// The roof strip's steps, bottom to top: dragging up takes parts off one step at a time.
+export const STRIP_STEPS = ['on', 'panels', 'off', 'doorsOff']
+export const STRIP_PITCH = 44
+
+// Which step the Jeep is on (0 = Top on … 3 = Doors off).
+export function stripIndex(roof, doorsOff) {
+  if (doorsOff) return 3
+  const i = STRIP_STEPS.indexOf(roof)
+  return i < 0 ? 0 : i
+}
+
+// Where the thumb's centre sits on a track whose top step is at `top`: step `index` (bottom = 0),
+// plus the finger's residual pull `residual` (px, down positive) while a drag is on, never past the ends.
+export function stripThumbY(index, residual = 0, { top = 0, pitch = STRIP_PITCH, steps = STRIP_STEPS.length } = {}) {
+  const span = (steps - 1) * pitch
+  const y = top + (steps - 1 - index) * pitch + residual
+  return Math.min(top + span, Math.max(top, y))
+}
+
+// The views the Jeep button cycles: the 3/4 hero, the top view turning on its own, the tires.
+export const MODES = ['hero', 'turntable', 'tires']
+export function nextMode(mode) {
+  const i = MODES.indexOf(mode)
+  return MODES[(i + 1) % MODES.length]
+}
+
+// What the overlay has to do to get from one state to the next (like embedCalls, for the page's own
+// parts rather than the 3D model). `region` and `tires` compare by value.
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+export function overlayCalls(prev = {}, next = {}) {
+  const calls = []
+  if (MODES.includes(next.mode) && next.mode !== (prev.mode ?? 'hero')) calls.push(['setMode', next.mode])
+  const fresh = (k) => k in next && (!(k in prev) || (next[k] ?? null) !== (prev[k] ?? null))
+  if (fresh('locked')) calls.push(['setLock', next.locked ?? null])
+  if (fresh('charge')) calls.push(['setCharge', next.charge ?? null])
+  if (next.tires && !same(next.tires, prev.tires)) calls.push(['setTires', next.tires])
+  if (next.region && !same(next.region, prev.region)) calls.push(['setRegion', next.region])
+  return calls
+}
+
+// The box the car is fitted into: the region less the strip's column on its right (when the strip shows).
+export function carBox(region, { strip = true, stripWidth = 48 } = {}) {
+  const x1 = strip ? Math.max(region.x0 + 1, region.x1 - stripWidth) : region.x1
+  return { x0: region.x0, y0: region.y0, x1, y1: region.y1 }
+}
+
+// A cubic bezier easing (like CSS cubic-bezier), so the page and the app can share one curve.
+export function cubicBezier(x1, y1, x2, y2) {
+  const A = (a1, a2) => 1 - 3 * a2 + 3 * a1, B = (a1, a2) => 3 * a2 - 6 * a1, C = (a1) => 3 * a1
+  const bez = (t, a1, a2) => ((A(a1, a2) * t + B(a1, a2)) * t + C(a1)) * t
+  const slope = (t, a1, a2) => 3 * A(a1, a2) * t * t + 2 * B(a1, a2) * t + C(a1)
+  return (x) => {
+    if (x <= 0) return 0
+    if (x >= 1) return 1
+    let t = x
+    for (let i = 0; i < 8; i++) { const s = slope(t, x1, x2); if (Math.abs(s) < 1e-6) break; t -= (bez(t, x1, x2) - x) / s }
+    return bez(t, y1, y2)
+  }
+}
+export const SLIDE = cubicBezier(0.22, 1, 0.36, 1)
+export const SLIDE_MS = 520
+
+// A call-out: a hairline straight up from the part to a tiny label. `left` puts the label on the
+// line's left (parts on the car's left half), otherwise on its right. `rise` is the line's length.
+export function calloutLayout(anchor, { left = true, rise = 44, gap = 6 } = {}) {
+  const top = anchor.y - rise
+  return {
+    line: [[anchor.x, anchor.y], [anchor.x, top]],
+    label: { x: left ? anchor.x - gap : anchor.x + gap, y: top, align: left ? 'right' : 'left' },
+  }
+}

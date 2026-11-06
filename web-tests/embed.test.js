@@ -97,3 +97,71 @@ test('boxCornersAreTheEight', () => {
   assert.equal(c.length, 8)
   assert.deepEqual(c[0], [0, 0, 0]); assert.deepEqual(c[7], [1, 2, 3])
 })
+
+// ---------- v2 ----------
+import { STRIP_STEPS, stripIndex, stripThumbY, nextMode, overlayCalls, carBox, cubicBezier, calloutLayout } from '../src/embedState.js'
+
+test('stripIndexBottomIsTopOnTopIsDoorsOff', () => {
+  assert.deepEqual(STRIP_STEPS, ['on', 'panels', 'off', 'doorsOff'])
+  assert.equal(stripIndex('on', false), 0)
+  assert.equal(stripIndex('panels', false), 1)
+  assert.equal(stripIndex('off', false), 2)
+  assert.equal(stripIndex('off', true), 3)
+  assert.equal(stripIndex('bogus', false), 0)
+})
+
+test('stripThumbFollowsTheFingerBetweenTheEnds', () => {
+  const t = { top: 100, pitch: 44 }
+  assert.equal(stripThumbY(0, 0, t), 232)      // Top on: the bottom step
+  assert.equal(stripThumbY(3, 0, t), 100)      // Doors off: the top step
+  assert.equal(stripThumbY(1, -10, t), 178)    // pulled up a little from Panels
+  assert.equal(stripThumbY(3, -30, t), 100)    // never past the top
+  assert.equal(stripThumbY(0, 90, t), 232)     // never past the bottom
+})
+
+test('modesCycle', () => {
+  assert.equal(nextMode('hero'), 'turntable')
+  assert.equal(nextMode('turntable'), 'tires')
+  assert.equal(nextMode('tires'), 'hero')
+  assert.equal(nextMode('bogus'), 'hero')
+})
+
+test('overlayCallsOnlyDiffs', () => {
+  assert.deepEqual(overlayCalls({}, { mode: 'hero' }), [])
+  assert.deepEqual(overlayCalls({}, { mode: 'tires' }), [['setMode', 'tires']])
+  assert.deepEqual(overlayCalls({ locked: true }, { locked: true }), [])
+  assert.deepEqual(overlayCalls({ locked: true }, { locked: false }), [['setLock', false]])
+  assert.deepEqual(overlayCalls({}, { locked: null }), [['setLock', null]])
+  assert.deepEqual(overlayCalls({ charge: null }, { charge: 'Plugged in' }), [['setCharge', 'Plugged in']])
+  const tires = { FL: '36', FR: '36', RL: '35', RR: '36', ago: '38 minutes ago' }
+  assert.deepEqual(overlayCalls({}, { tires }), [['setTires', tires]])
+  assert.deepEqual(overlayCalls({ tires }, { tires: { ...tires } }), [])
+  const region = { x0: 0, y0: 36, x1: 840, y1: 356 }
+  assert.deepEqual(overlayCalls({ region }, { region: { ...region, x1: 400 } }), [['setRegion', { ...region, x1: 400 }]])
+  // the 3D calls don't leak in
+  assert.deepEqual(overlayCalls({}, { roof: 'off', lights: true }), [])
+})
+
+test('carBoxLeavesTheStripColumn', () => {
+  const region = { x0: 0, y0: 36, x1: 840, y1: 356 }
+  assert.deepEqual(carBox(region), { x0: 0, y0: 36, x1: 792, y1: 356 })
+  assert.deepEqual(carBox(region, { strip: false }), region)
+  assert.equal(carBox({ x0: 10, y0: 0, x1: 20, y1: 10 }).x1, 11)
+})
+
+test('cubicBezierIsAnEasing', () => {
+  const ease = cubicBezier(0.22, 1, 0.36, 1)
+  assert.equal(ease(0), 0)
+  assert.equal(ease(1), 1)
+  assert.ok(ease(0.5) > 0.9 && ease(0.5) < 1)   // a fast-out curve
+  assert.ok(ease(0.1) > 0.4)
+  const linear = cubicBezier(0, 0, 1, 1)
+  assert.ok(Math.abs(linear(0.3) - 0.3) < 1e-4)
+})
+
+test('calloutLayoutRisesStraightUp', () => {
+  const c = calloutLayout({ x: 300, y: 200 }, { left: true, rise: 44 })
+  assert.deepEqual(c.line, [[300, 200], [300, 156]])
+  assert.deepEqual(c.label, { x: 294, y: 156, align: 'right' })
+  assert.equal(calloutLayout({ x: 300, y: 200 }, { left: false }).label.align, 'left')
+})

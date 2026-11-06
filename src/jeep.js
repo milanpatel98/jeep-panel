@@ -123,6 +123,12 @@ export async function createJeep(canvas, { url, onProgress, onFrame, fitView } =
   anchors.seatFL = new THREE.Vector3(0.38 * sx, 1.05, front * 0.2); anchors.seatFR = new THREE.Vector3(-0.38 * sx, 1.05, front * 0.2)
   anchors.seatBL = new THREE.Vector3(0.48 * sx, 1.05, front * -0.62); anchors.seatBM = new THREE.Vector3(0, 1.05, front * -0.62); anchors.seatBR = new THREE.Vector3(-0.48 * sx, 1.05, front * -0.62)
   anchors.wheel = new THREE.Vector3(0.4 * sx, 1.15, front * 0.74)
+  // the charge port: a 4xe's sits on the driver's side front fender, ahead of the door
+  // the charge port: a 4xe's sits on the driver's side front fender, ahead of the door (this
+  // model's steering wheel is on its −x side); `chargeOut` is a point outside it, to tell which
+  // way its call-out should point
+  anchors.charge = new THREE.Vector3(-1.0, 0.98, front * 1.42)
+  anchors.chargeOut = new THREE.Vector3(-1.8, 0.98, front * 1.42)
   // labels on parts that swing ride along with them
   const hinged = { FL: doors.FL.hinge, FR: doors.FR.hinge, BL: doors.BL.hinge, BR: doors.BR.hinge, hood: hood.hinge, gate: gate.hinge }
   const onHinge = {}
@@ -133,6 +139,8 @@ export async function createJeep(canvas, { url, onProgress, onFrame, fitView } =
   // the steering (front) wheels: the model's wheel nodes are named for the other end, so pick by position
   const wheelNodes = ['FL', 'FR', 'BL', 'BR'].map(byName).filter(Boolean).sort((a, b) => (local(b).c.z - local(a).c.z) * front)
   const wheels = { FL: wheelNodes[0], FR: wheelNodes[1] }
+  // each wheel's hub, for the tire labels (front pair first; left is the driver's side, +x)
+  for (const [i, w] of wheelNodes.entries()) { const b = local(w); anchors[`wheel${i < 2 ? 'F' : 'B'}${b.c.x * sx > 0 ? 'L' : 'R'}`] = new THREE.Vector3(b.c.x, b.c.y, b.c.z) }
   const wheelPivots = {}
   for (const [k, w] of Object.entries(wheels)) { const b = local(w); wheelPivots[k] = hingeAt([w], b.c) }
 
@@ -232,20 +240,23 @@ export async function createJeep(canvas, { url, onProgress, onFrame, fitView } =
       const a0 = new THREE.Spherical().setFromVector3(fromP.clone().sub(fromT)), a1 = new THREE.Spherical().setFromVector3(toP.clone().sub(toT))
       let dTheta = a1.theta - a0.theta; dTheta -= Math.round(dTheta / (2 * Math.PI)) * 2 * Math.PI
       const o0 = cam.view?.enabled ? [cam.view.offsetX, cam.view.offsetY] : [0, 0], o1 = v.offset || [0, 0]
+      // the virtual frame the view is framed in (`v.full`, px): the canvas shows a window of it
+      const f0 = cam.view?.enabled ? [cam.view.fullWidth, cam.view.fullHeight] : [canvas.clientWidth, canvas.clientHeight], f1 = v.full || [canvas.clientWidth, canvas.clientHeight]
       const at = new THREE.Spherical(), t = new THREE.Vector3()
       tween(() => 0, (k) => {
         controls.target.lerpVectors(fromT, toT, k)
         at.set(a0.radius + (a1.radius - a0.radius) * k, a0.phi + (a1.phi - a0.phi) * k, a0.theta + dTheta * k)
         let off = [o0[0] + (o1[0] - o0[0]) * k, o0[1] + (o1[1] - o0[1]) * k]
+        let full = [f0[0] + (f1[0] - f0[0]) * k, f0[1] + (f1[1] - f0[1]) * k]
         // in between, the view can frame each angle on the way (`v.fitAt(az, el)`), so the car never
         // runs out of the frame mid-glide (from above to the 3/4 view the car looks taller on the way)
         if (v.fitAt && k > 0 && k < 1) {
           const f = v.fitAt(THREE.MathUtils.radToDeg(at.theta), 90 - THREE.MathUtils.radToDeg(at.phi))
-          if (f) { at.radius = f.d; off = f.offset }
+          if (f) { at.radius = f.d; off = f.offset; if (f.full) full = f.full }
         }
         cam.position.copy(t.setFromSpherical(at).add(controls.target))
         const w = canvas.clientWidth, h = canvas.clientHeight
-        if (w && h) { cam.setViewOffset(w, h, off[0], off[1], w, h); cam.updateProjectionMatrix() }
+        if (w && h) { cam.aspect = full[0] / full[1]; cam.setViewOffset(full[0], full[1], off[0], off[1], w, h); cam.updateProjectionMatrix() }
       }, 1, ms, 'cam')
       return
     }
