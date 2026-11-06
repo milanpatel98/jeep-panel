@@ -357,7 +357,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         } else {
             items = [CPListItem(text: "Sign in on your iPhone.", detailText: nil)]
         }
-        return [CPListSection(items: items)]
+        // the company line, with its longhorn, at the foot of Settings
+        let year = Calendar.current.component(.year, from: Date())
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let company = CPListItem(
+            text: "© \(year) The Neural Horn", detailText: "Forx \(version)",
+            image: UIImage(named: "neural-horn")?.withTintColor(.white, renderingMode: .alwaysOriginal))
+        return [CPListSection(items: items), CPListSection(items: [company])]
     }
 
     // MARK: Buttons

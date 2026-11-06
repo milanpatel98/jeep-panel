@@ -36,6 +36,9 @@ struct SettingsView: View {
                     } message: {
                         Text("Your sign-in and PIN are removed from this iPhone.")
                     }
+                } footer: {
+                    NeuralHornFooter()
+                        .padding(.top, 28)
                 }
             }
             .navigationTitle("Settings")
