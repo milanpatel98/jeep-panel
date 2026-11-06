@@ -81,7 +81,8 @@ struct DashboardLayoutTests {
 
     @MainActor @Test func demoJeepOnlyWithTheDemoMode() {
         // tests run without FORX_CP: no fixture
-        #expect(CarPlayDebug.mode != "demo" ? CarPlayDebug.demoSnapshot() == nil : true)
+        #expect(CarPlayDebug.demo ? CarPlayDebug.demoSnapshot() != nil : CarPlayDebug.demoSnapshot() == nil)
+        #expect(!CarPlayDebug.demo || CarPlayDebug.demoOpen == (CarPlayDebug.demoSnapshot()?.tailgateOpen ?? false))
     }
 }
 

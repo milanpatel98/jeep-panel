@@ -108,6 +108,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private func render() {
         guard connected else { return }
         let dark = Self.isDark(window)
+        if let window {
+            Self.log.notice("CarPlay window bounds=\(NSCoder.string(for: window.bounds), privacy: .public) safe=\(NSCoder.string(for: window.safeAreaInsets), privacy: .public)")
+        }
         paint(dark)
         host?.rootView = Self.dashboard(templates: templates, dark: dark, gestures: gestures, motion: motion)
     }
@@ -118,7 +121,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     /// CarPlay's appearance: night unless the window says light.
     private static func isDark(_ window: UIWindow?) -> Bool {
-        window?.traitCollection.userInterfaceStyle != .light
+        if CarPlayDebug.forceDay { return false }
+        return window?.traitCollection.userInterfaceStyle != .light
     }
 
     private func startTicker() {

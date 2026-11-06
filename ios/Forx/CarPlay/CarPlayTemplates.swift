@@ -38,16 +38,21 @@ enum CarPlayDebug {
     static var skipMapButtons: Bool { mode == "nomap" || mode == "bare" }
     static var skipMapDelegate: Bool { mode == "bare" }
     static var listRoot: Bool { mode == "listroot" }
-    static var demo: Bool { mode == "demo" }
+    /// `demo`, or `demo-open` (the driver's door and the tailgate open, unlocked, charging) and
+    /// `-day` (CarPlay's day appearance, whatever the simulator says): `demo-open-day`.
+    static var demo: Bool { mode?.hasPrefix("demo") == true }
+    static var demoOpen: Bool { demo && mode?.contains("open") == true }
+    static var forceDay: Bool { demo && mode?.contains("day") == true }
 
-    /// The demo Jeep (`FORX_CP=demo`, Debug only): nil otherwise.
+    /// The demo Jeep (`FORX_CP=demo…`, Debug only): nil otherwise.
     static func demoSnapshot(now: Date = Date()) -> JeepSnapshot? {
         #if DEBUG
         guard demo else { return nil }
+        let open = demoOpen
         return JeepSnapshot(
-            nickname: "Jeep", locked: true, doorsOpen: [], tailgateOpen: false,
-            rangeMiles: 186, fuelPercent: 64, evPercent: 78, pluggedIn: false, charging: false,
-            chargeMinutesLeft: nil, tiresPsi: ["FL": 36, "FR": 36, "RL": 35, "RR": 36],
+            nickname: "Jeep", locked: !open, doorsOpen: open ? ["driver"] : [], tailgateOpen: open,
+            rangeMiles: 186, fuelPercent: 64, evPercent: 78, pluggedIn: open, charging: open,
+            chargeMinutesLeft: open ? 95 : nil, tiresPsi: ["FL": 36, "FR": 36, "RL": 35, "RR": 36],
             odometerMiles: nil, latitude: 39.7555, longitude: -105.2211,
             supported: [.lock, .unlock, .climateOn, .climateOff, .lights, .horn],
             updatedAt: now.addingTimeInterval(-38 * 60), ignitionOn: false, gasRangeMiles: 165)

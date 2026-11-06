@@ -186,7 +186,13 @@ struct DashboardView: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .clipped()
         }
+        // CarPlay reports its own chrome (the map-button column on the trailing side, the
+        // navigation bar on top when it shows) as safe-area insets: the layout keeps clear of
+        // those itself, so it uses the window up to those edges, or the parked map would show at
+        // the edge and the car would refit whenever the bar came and went. The dock's inset stays.
+        .ignoresSafeArea(.container, edges: [.top, .trailing])
         .background(theme.background.ignoresSafeArea())
         .environment(\.colorScheme, dark ? .dark : .light)
     }
