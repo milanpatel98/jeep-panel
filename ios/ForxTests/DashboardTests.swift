@@ -111,7 +111,7 @@ struct JeepEmbedStateTests {
             roof: "panels", reducedMotion: true, mode: .tires, charge: "Plugged in",
             tires: ["FL": "36", "FR": "36", "RL": "35", "RR": "36"], tiresAgo: "38 minutes ago")
         #expect(JeepEmbedState.json(state)
-            == #"{"charge":"Plugged in","doors":{"BL":false,"BR":true,"FL":true,"FR":false},"doorsOff":false,"gate":true,"lights":false,"locked":true,"mode":"tires","reducedMotion":true,"roof":"panels","theme":"dark","tires":{"FL":"36","FR":"36","RL":"35","RR":"36","ago":"38 minutes ago"}}"#)
+            == #"{"charge":"Plugged in","doors":{"BL":false,"BR":true,"FL":true,"FR":false},"doorsOff":false,"gate":true,"lights":false,"locked":true,"mode":"tires","reducedMotion":true,"roof":"panels","theme":"dark","tires":{"ago":"38 minutes ago","FL":"36","FR":"36","RL":"35","RR":"36"}}"#)
     }
 
     @Test func unknownJeepSendsNullLock() {
