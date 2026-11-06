@@ -69,6 +69,10 @@ nonisolated enum JeepEmbedState {
 /// The page's loading screen and its `ready` are reported to `motion`.
 struct JeepEmbedView: UIViewRepresentable {
     static let url = URL(string: "forx://app/embed.html")!
+    /// The page to load: with the `slow` demo word (Debug) it holds its loading screen a while.
+    static var pageURL: URL {
+        CarPlayDebug.demoWords.contains("slow") ? URL(string: "forx://app/embed.html?slow=1")! : url
+    }
 
     let state: [String: Any]
     var gestures: JeepGestures? = nil
@@ -104,7 +108,7 @@ struct JeepEmbedView: UIViewRepresentable {
         coordinator.motion = motion
         coordinator.attach(gestures)
         coordinator.update(state)
-        webView.load(URLRequest(url: Self.url))
+        webView.load(URLRequest(url: Self.pageURL))
         return webView
     }
 
@@ -191,7 +195,7 @@ struct JeepEmbedView: UIViewRepresentable {
             pushed = nil
             motion?.page = .blank
             guard !stopped else { return }
-            webView.load(URLRequest(url: JeepEmbedView.url))
+            webView.load(URLRequest(url: JeepEmbedView.pageURL))
         }
 
         /// The page stays on `forx://`; nothing else loads.

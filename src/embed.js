@@ -521,6 +521,8 @@ function frameCam() {
 }
 
 async function main() {
+  // ?slow=1: hold the loading screen a while (for looking at it in the simulator)
+  if (params.get('slow')) await new Promise((r) => setTimeout(r, 8000))
   const j = await createJeep(canvas, {
     url: new URL('model/jeep.glb', document.baseURI).href,
     onProgress: (p) => { loader.progress(p); post({ type: 'progress', value: p }) },
