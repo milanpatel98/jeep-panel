@@ -11,80 +11,54 @@ private func near(_ a: CGFloat, _ b: CGFloat) -> Bool {
 }
 
 struct DashboardLayoutTests {
-    @Test func twoCardsShareTopAndBottom() {
-        let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        // Jeep card: 6 from the leading edge, 35% of the width
-        #expect(near(l.jeepCard.minX, 6) && near(l.jeepCard.minY, 6))
-        #expect(near(l.jeepCard.width, 336) && near(l.jeepCard.height, 348))
-        // globe card: 10 pt after it, to 6 pt from the trailing edge, same top and bottom
-        #expect(near(l.card.minX, 352) && near(l.card.minY, 6))
-        #expect(near(l.card.maxX, 954))
-        #expect(near(l.card.height, l.jeepCard.height) && near(l.card.maxY, 354))
-        #expect(near(DashboardLayout.cardRadius, 24))
-        #expect(l.showsBattery)
+    private let l = DashboardLayout(size: CGSize(width: 910, height: 360))
+
+    @Test func carRegionKeepsClearOfTheStatusRowAndTheButtons() {
+        let r = l.region(mapOpen: false)
+        #expect(near(r.minX, 0) && near(r.minY, 40))
+        #expect(near(r.maxX, 910 - 70) && near(r.maxY, 354))
+        #expect(DashboardLayout.regionJSON(r) == "{\"x0\":0,\"y0\":40,\"x1\":840,\"y1\":354}")
     }
 
-    @Test func designSizeJeepCard() {
-        let l = DashboardLayout(size: CGSize(width: 960, height: 360))
-        #expect(near(l.nameFont, 12))
-        #expect(near(l.nameTop, 18))
-        #expect(near(l.heroFont, 34))
-        #expect(near(l.unitFont, 15))
-        #expect(near(l.energyFont, 13))
-        #expect(near(l.heroTop, l.nameTop + l.nameLine))
-        // the Jeep: full card width, from y 74 to 38 above the card's bottom
-        #expect(near(l.jeep.minX, 0) && near(l.jeep.minY, 74))
-        #expect(near(l.jeep.width, 336) && near(l.jeep.maxY, 348 - 38))
-        // the status line's bottom 16 above the card's
-        #expect(near(l.statusBottom, 348 - 16))
+    @Test func mapOpenSplitsTheScreen() {
+        #expect(near(l.splitX, 419))  // 46%
+        let r = l.region(mapOpen: true)
+        #expect(near(r.maxX, 419 - 10))
+        let m = l.mapFrame(open: true)
+        #expect(near(m.minX, 419) && near(m.maxX, 910) && near(m.height, 360) && near(m.minY, 0))
+        // closed: just off the right edge, same width
+        let c = l.mapFrame(open: false)
+        #expect(near(c.minX, 910) && near(c.width, m.width))
+        #expect(near(l.dividerTravel, 910 - 419))
+        // a finger pulling the divider right takes the car's region with it
+        #expect(near(l.region(mapOpen: true, dividerDx: 100).maxX, 509))
+        #expect(near(l.mapFrame(open: true, dividerDx: 100).minX, 519))
+        // never past the button column
+        #expect(near(l.region(mapOpen: true, dividerDx: 900).maxX, 840))
     }
 
-    @Test func typeShrinksToAFloorOnShortWindows() {
-        let small = DashboardLayout(size: CGSize(width: 640, height: 240))
-        #expect(near(small.nameFont, 11))
-        #expect(near(small.heroFont, 26))
-        #expect(near(small.unitFont, 12))
-        #expect(near(small.energyFont, 11))
-        #expect(near(small.statusFont, 11))
-        let big = DashboardLayout(size: CGSize(width: 1920, height: 720))
-        #expect(near(big.heroFont, 34))
-        #expect(near(big.nameFont, 12))
+    @Test func statusRowAndType() {
+        #expect(near(l.statusOrigin.x, 20) && near(l.statusOrigin.y, 13))
+        #expect(near(l.statusFont, 13))
+        #expect(near(DashboardLayout(size: CGSize(width: 640, height: 240)).statusFont, 11))
+        #expect(near(DashboardLayout(size: CGSize(width: 1920, height: 720)).statusFont, 13))
     }
 
-    @Test func narrowCardDropsTheBattery() {
-        #expect(!DashboardLayout(size: CGSize(width: 400, height: 240)).showsBattery)
-        #expect(DashboardLayout(size: CGSize(width: 640, height: 240)).showsBattery)
-    }
-
-    @Test func partsStayInOrderTopToBottom() {
-        for size in [CGSize(width: 640, height: 240), CGSize(width: 400, height: 240), CGSize(width: 960, height: 360), CGSize(width: 800, height: 480)] {
-            let l = DashboardLayout(size: size)
-            #expect(l.nameTop + l.nameLine <= l.heroTop)
-            #expect(l.heroTop + l.heroLine <= l.jeep.minY)
-            #expect(l.jeep.maxY <= l.statusBottom - l.statusLineHeight)
-            #expect(l.statusBottom < l.jeepCard.height)
-            #expect(l.jeep.height > 80)
-            #expect(near(l.card.minX - l.jeepCard.maxX, 10))
-        }
-    }
-
-    @Test func globeOverflowsBottomRightAndKeepsTheLabelInside() {
-        let l = DashboardLayout(size: CGSize(width: 640, height: 240))  // card 394 × 228
-        #expect(near(l.globeDiameter, 342))
-        let m = l.mapFrame
-        #expect(abs(m.minX) < 0.0001 && abs(m.minY) < 0.0001)
-        #expect(m.maxX >= l.card.width && m.maxY >= l.card.height)
-        #expect(abs(l.mapMargins.bottom - (m.maxY - 228)) < 0.0001)
-        #expect(abs(l.mapMargins.trailing - (m.maxX - 394)) < 0.0001)
-        #expect(near(l.mapMargins.top, 0) && near(l.mapMargins.leading, 0))
-        #expect(near(l.dotSize, 8))
-        #expect(near(DashboardLayout(size: CGSize(width: 1520, height: 628)).dotSize, 10))
+    @Test func trayRowsSitOnTheMapButtons() {
+        let centres = l.buttonCentres(count: 4)
+        #expect(centres.count == 4)
+        #expect(near(centres[3], 360 - 22.5))
+        #expect(near(centres[2], 360 - 22.5 - 44))
+        #expect(near(centres[0], 360 - 22.5 - 3 * 44))
+        let tray = l.trayFrame(count: 4)
+        #expect(near(tray.maxX, 910) && near(tray.maxY, 360))
+        #expect(tray.minY < centres[0] - 22)  // the title fits above the first row
+        #expect(l.buttonCentres(count: 0).isEmpty)
     }
 
     @Test func themeColours() {
         #expect(DashboardTheme(dark: true).background == .black)
         #expect(DashboardTheme(dark: false).background == Color(hex: 0xF5F5F7))
-        #expect(DashboardTheme(dark: false).card == .white)
         #expect(DashboardTheme(dark: false).text == Color(hex: 0x1C1C1E))
         #expect(DashboardTheme(dark: false).secondary == Color(hex: 0x6E6E73))
     }
@@ -111,21 +85,14 @@ struct DashboardLayoutTests {
     }
 }
 
-struct GlobeFitTests {
-    @Test func distanceGivesTheWantedRadius() throws {
-        let r = GlobeFit.earthRadius, f = 500.0, current = 22_000_000.0, a = GlobeFit.probeAngle
-        let measured = f * r * sin(a) / (current + r - r * cos(a))
-        let d = try #require(GlobeFit.distance(measured: measured, at: current, radius: 300))
-        let expected = r * (1 + (f / 300) * (f / 300)).squareRoot() - r
-        #expect(abs(d - expected) < 1)
-        #expect(GlobeFit.distance(measured: .nan, at: current, radius: 300) == nil)
-    }
-
-    @Test func cameraLooksSouthOfTheJeep() {
-        let c = GlobeFit.cameraCenter(for: CLLocationCoordinate2D(latitude: 39.7, longitude: -105.2))
-        #expect(abs(c.latitude - 24.7) < 0.0001 && c.longitude == -105.2)
-        #expect(GlobeFit.cameraCenter(for: nil).latitude == 0)
-        #expect(GlobeFit.probe(from: CLLocationCoordinate2D(latitude: 70, longitude: 0)).latitude == 40)
+struct JeepMapCameraTests {
+    @Test func looksAtTheJeepFromAbove() {
+        let (c, d) = JeepMapCamera.center(for: CLLocationCoordinate2D(latitude: 39.7, longitude: -105.2))
+        #expect(abs(c.latitude - 39.7) < 0.0001 && c.longitude == -105.2)
+        #expect(d == JeepMapCamera.distance)
+        let (none, far) = JeepMapCamera.center(for: nil)
+        #expect(none.longitude == 0 && far > 1_000_000)
+        #expect(JeepMapCamera.center(for: kCLLocationCoordinate2DInvalid).1 > 1_000_000)
     }
 }
 
@@ -141,16 +108,20 @@ struct JeepEmbedStateTests {
     @Test func mapsDoorsGateRoofAndMotion() {
         let state = JeepEmbedState.make(
             snapshot: snap(locked: true, doorsOpen: ["driver", "rightRear"], tailgate: true),
-            roof: "panels", reducedMotion: true)
+            roof: "panels", reducedMotion: true, mode: .tires, charge: "Plugged in",
+            tires: ["FL": "36", "FR": "36", "RL": "35", "RR": "36"], tiresAgo: "38 minutes ago")
         #expect(JeepEmbedState.json(state)
-            == #"{"doors":{"BL":false,"BR":true,"FL":true,"FR":false},"doorsOff":false,"gate":true,"lights":false,"locked":true,"reducedMotion":true,"roof":"panels","theme":"dark"}"#)
+            == #"{"charge":"Plugged in","doors":{"BL":false,"BR":true,"FL":true,"FR":false},"doorsOff":false,"gate":true,"lights":false,"locked":true,"mode":"tires","reducedMotion":true,"roof":"panels","theme":"dark","tires":{"FL":"36","FR":"36","RL":"35","RR":"36","ago":"38 minutes ago"}}"#)
     }
 
-    @Test func unknownJeepLeavesLockedOut() {
+    @Test func unknownJeepSendsNullLock() {
         let state = JeepEmbedState.make(snapshot: nil, roof: "on", reducedMotion: false)
-        #expect(state["locked"] == nil)
+        #expect(state["locked"] is NSNull)
+        #expect(state["charge"] is NSNull)
         #expect(JeepEmbedState.json(state)
-            == #"{"doors":{"BL":false,"BR":false,"FL":false,"FR":false},"doorsOff":false,"gate":false,"lights":false,"reducedMotion":false,"roof":"on","theme":"dark"}"#)
+            == #"{"charge":null,"doors":{"BL":false,"BR":false,"FL":false,"FR":false},"doorsOff":false,"gate":false,"lights":false,"locked":null,"mode":"hero","reducedMotion":false,"roof":"on","theme":"dark","tires":{"ago":""}}"#)
+        #expect(JeepEmbedState.make(snapshot: snap(locked: nil, doorsOpen: [], tailgate: nil), roof: "on", reducedMotion: false)["locked"] is NSNull)
+        #expect(JeepEmbedState.make(snapshot: snap(locked: false, doorsOpen: [], tailgate: nil), roof: "on", reducedMotion: false)["locked"] as? Bool == false)
     }
 
     @Test func doorsOffIsTopOffWithoutDoors() {
@@ -162,5 +133,21 @@ struct JeepEmbedStateTests {
     @Test func dayGivesTheLightTheme() {
         let state = JeepEmbedState.make(snapshot: nil, roof: "on", reducedMotion: false, dark: false)
         #expect(state["theme"] as? String == "light")
+    }
+
+    @Test func regionJoinsThePageState() {
+        let l = DashboardLayout(size: CGSize(width: 910, height: 360))
+        let s = DashboardView.pageState(["theme": "dark"], layout: l, mapOpen: true)
+        #expect((s["region"] as? [String: Int]) == ["x0": 0, "y0": 40, "x1": 409, "y1": 354])
+        #expect(s["theme"] as? String == "dark")
+    }
+
+    @Test func pageMessages() {
+        #expect(JeepEmbedState.page(["type": "loader"]) == .loading(0))
+        #expect(JeepEmbedState.page(["type": "progress", "value": 0.4]) == .loading(0.4))
+        #expect(JeepEmbedState.page(["type": "progress", "value": 7.0]) == .loading(1))
+        #expect(JeepEmbedState.page(["type": "ready"]) == .ready)
+        #expect(JeepEmbedState.page(["type": "error", "message": "x"]) == nil)
+        #expect(JeepEmbedState.page("junk") == nil)
     }
 }

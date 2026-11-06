@@ -17,6 +17,8 @@ final class Recorder {
     var urls: [URL] = []
     var commands: [JeepCommand] = []
     var roofs: [String] = []
+    var calls: [String] = []
+    var closes = 0
     var completions = 0
 }
 
@@ -37,20 +39,21 @@ struct CarPlaySceneTests {
 
     private func model(
         _ s: JeepSnapshot?, signedIn: Bool = true, pending: Set<JeepCommand> = [], climateOn: Bool = false,
-        roof: String = "on"
+        roof: String = "on", mode: JeepMode = .hero, mapOpen: Bool = false
     ) -> CarPlayModel {
         CarPlayModel.make(
             snapshot: s, pending: pending, climateOn: climateOn, message: nil,
-            signedIn: signedIn, roof: roof, now: now, timeZone: TimeZone(identifier: "UTC")!)
+            signedIn: signedIn, roof: roof, mode: mode, mapOpen: mapOpen, now: now, timeZone: TimeZone(identifier: "UTC")!)
     }
 
-    private func make(_ fake: FakeCarPlayInterface, _ rec: Recorder) -> CarPlayTemplates {
+    private func make(_ fake: FakeCarPlayInterface, _ rec: Recorder, gestures: JeepGestures? = nil) -> CarPlayTemplates {
         CarPlayTemplates(
             interface: fake,
             open: { rec.urls.append($0) },
             perform: { rec.commands.append($0) },
             setRoof: { rec.roofs.append($0) },
-            email: { "milan@example.com" })
+            email: { "milan@example.com" },
+            gestures: gestures)
     }
 
     @Test func mapButtonsMatchModel() {
@@ -61,9 +64,9 @@ struct CarPlaySceneTests {
         #expect(fake.roots.count == 1)
         #expect(fake.roots.first === t.mapTemplate)
         #expect(t.mapTemplate.mapButtons.count == 4)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
-        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)  // Search
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)  // Spin, Apps; Settings is in More
+        #expect(t.shownButtons.map(\.kind) == [.jeep, .lock, .earth, .apps])
+        #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)  // nothing over the status row
+        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)  // Roof, More; Settings is in More
         #expect(t.mapTemplate.automaticallyHidesNavigationBar)
         #expect(!t.mapTemplate.hidesButtonsWithNavigationBar)
 
@@ -74,12 +77,16 @@ struct CarPlaySceneTests {
         #expect(t.mapTemplate.mapButtons.first === mapBefore.first)
         #expect(t.mapTemplate.trailingNavigationBarButtons.first === barBefore.first)
 
-        // No Climate support: Climate is absent, Roof and More stay; same map template, updated in place.
-        let noClimate = model(snap(supported: [.lock, .unlock, .lights]))
-        t.update(noClimate)
+        // No lock support: Lock is absent; same map template, updated in place.
+        let noLock = model(snap(supported: [.climateOn, .lights]))
+        t.update(noLock)
         #expect(fake.roots.count == 1)
         #expect(t.mapTemplate.mapButtons.count == 3)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .roof, .more])
+        #expect(t.shownButtons.map(\.kind) == [.jeep, .earth, .apps])
+
+        // The Roof bar button is redrawn for each roof.
+        t.update(model(snap(), roof: "panels"))
+        #expect(t.mapTemplate.trailingNavigationBarButtons.first !== barBefore.first)
 
         // Not signed in: no map buttons, only Settings.
         t.update(model(snap(), signedIn: false))
@@ -98,22 +105,68 @@ struct CarPlaySceneTests {
         #expect(rec.commands == [.unlock, .lock])
     }
 
-    @Test func roofTapCyclesTheRoof() {
+    @Test func roofBarButtonCyclesTheRoof() {
         let rec = Recorder()
         let t = make(FakeCarPlayInterface(), rec)
         var roof = "on"
         for _ in 0..<4 {
             t.update(model(snap(), roof: roof))
-            t.tap(.roof)
+            t.stepRoof()
             roof = rec.roofs.last ?? roof
         }
         #expect(rec.roofs == ["panels", "off", "doorsOff", "on"])
         #expect(rec.commands.isEmpty)
-        // the tile is redrawn for each roof
-        t.update(model(snap(), roof: "on"))
-        let before = t.mapTemplate.mapButtons[2]
-        t.update(model(snap(), roof: "panels"))
-        #expect(t.mapTemplate.mapButtons[2] !== before)
+        // not signed in: nothing
+        t.update(model(snap(), signedIn: false))
+        t.stepRoof()
+        #expect(rec.roofs.count == 4)
+    }
+
+    @Test func earthAndJeepButtonsDriveTheMotion() {
+        let motion = DashboardMotion()
+        let g = JeepGestures(motion: motion, setRoof: { _ in })
+        let rec = Recorder()
+        let t = make(FakeCarPlayInterface(), rec, gestures: g)
+        t.update(model(snap()))
+        #expect(t.shownButtons.first { $0.kind == .earth }?.state == .off)
+
+        t.tap(.earth)
+        #expect(motion.mapOpen)
+        #expect(t.shownButtons.first { $0.kind == .earth }?.state == .on)  // lit right away
+        t.tap(.earth)
+        #expect(!motion.mapOpen)
+        #expect(t.shownButtons.first { $0.kind == .earth }?.state == .off)
+
+        // a divider drag far enough closes it too
+        t.tap(.earth)
+        g.dividerTravel = 400
+        g.began()
+        g.changed(CGPoint(x: 12, y: 0))
+        g.changed(CGPoint(x: 200, y: 0))
+        g.ended(.zero)
+        #expect(!motion.mapOpen)
+        #expect(motion.dividerDx == 0)
+
+        t.tap(.jeep)
+        #expect(motion.mode == .turntable)
+        #expect(t.shownButtons.first { $0.kind == .jeep }?.state == .on)
+        t.tap(.jeep)
+        #expect(motion.mode == .tires)
+        t.tap(.jeep)
+        #expect(motion.mode == .hero)
+        #expect(t.shownButtons.first { $0.kind == .jeep }?.state == .off)
+
+        // the templates keep the gestures' roof current (the strip's step)
+        t.update(model(snap(), roof: "off"))
+        #expect(g.roof == "off")
+        #expect(g.roofIndex == 2)
+
+        // signing out closes the map and goes home
+        motion.mapOpen = true
+        motion.mode = .tires
+        t.update(model(snap(), signedIn: false))
+        #expect(!motion.mapOpen)
+        #expect(motion.mode == .hero)
     }
 
     @Test func lockTapWhenUnknownSendsLock() {
@@ -129,9 +182,6 @@ struct CarPlaySceneTests {
         let t = make(FakeCarPlayInterface(), rec)
         t.update(model(snap(locked: true), pending: [.unlock]))
         t.tap(.lock)
-        t.update(model(snap(), pending: [.climateOff], climateOn: true))
-        #expect(t.shownButtons.first { $0.kind == .climate }?.state == .pending)
-        t.tap(.climate)
         #expect(rec.commands.isEmpty)
     }
 
@@ -139,20 +189,12 @@ struct CarPlaySceneTests {
         let fake = FakeCarPlayInterface()
         let t = make(fake, Recorder())
         t.update(model(snap()))
-        t.tap(.more)
-        t.tap(.more)
+        t.showMore()
+        t.showMore()
         #expect(fake.pushed.count == 1)
         t.showSettings()
         t.showSettings()
         #expect(fake.pushed.count == 2)
-    }
-
-    @Test func searchOpensAppleMaps() {
-        let rec = Recorder()
-        let t = make(FakeCarPlayInterface(), rec)
-        t.update(model(snap()))
-        t.tapSearch()
-        #expect(rec.urls == [URL(string: "maps://")!])
     }
 
     @Test func moreRowsCallCompletion() throws {
@@ -160,20 +202,26 @@ struct CarPlaySceneTests {
         let rec = Recorder()
         let t = make(fake, rec)
         t.update(model(snap()))
-        t.tap(.more)
+        t.showMore()
         let list = try #require(fake.pushed.last as? CPListTemplate)
         let items = list.sections.flatMap(\.items).compactMap { $0 as? CPListItem }
         #expect(items.map(\.text) == [
-            "Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Trip", "Settings",
+            "Climate", "Lights", "Horn", "Tailgate", "Tires", "Charging", "Trip", "Settings",
         ])
         let tappable = items.filter { $0.handler != nil }
-        #expect(tappable.map(\.text) == ["Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Settings"])
+        #expect(tappable.map(\.text) == ["Climate", "Lights", "Horn", "Tailgate", "Settings"])
         for item in tappable {
             item.handler?(item) { rec.completions += 1 }
         }
         #expect(rec.completions == tappable.count)
-        #expect(rec.roofs == ["on", "panels", "off", "doorsOff"])
-        #expect(rec.commands == [.lights, .horn, .gate])
+        #expect(rec.commands == [.climateOn, .lights, .horn, .gate])
+
+        // Climate on: the row turns it off, and says so
+        t.update(model(snap(), climateOn: true))
+        let on = list.sections.flatMap(\.items).compactMap { $0 as? CPListItem }.first { $0.text == "Climate" }
+        #expect(on?.detailText == "On")
+        on?.handler?(on!) {}
+        #expect(rec.commands.last == .climateOff)
     }
 
     @Test func trayModeSwapsMapButtonsToFavourites() {
@@ -186,8 +234,8 @@ struct CarPlaySceneTests {
         #expect(t.shownButtons.isEmpty)
         #expect(t.shownApps.map(\.title) == ["YouTube Music", "Spotify", "Apple Music", "Apple Maps"])
         #expect(t.mapTemplate.mapButtons.count == 4)
-        // "All apps" joins Search on the leading side; Spin and Apps stay trailing
-        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 2)
+        // "All apps" leads; Roof and More stay trailing
+        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
         #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
         // The same state again reassigns nothing.
         let before = t.mapTemplate.mapButtons
@@ -196,8 +244,8 @@ struct CarPlaySceneTests {
         // Closing brings the command buttons back.
         t.toggleTray()
         #expect(!t.tray.isOpen)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
-        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
+        #expect(t.shownButtons.map(\.kind) == [.jeep, .lock, .earth, .apps])
+        #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)
     }
 
     @Test func favouriteTapOpensURLAndClosesTray() {
@@ -209,7 +257,7 @@ struct CarPlaySceneTests {
         #expect(rec.urls == [URL(string: "spotify://")!])
         #expect(!t.tray.isOpen)
         #expect(t.shownApps.isEmpty)
-        #expect(t.shownButtons.map(\.kind) == [.lock, .climate, .roof, .more])
+        #expect(t.shownButtons.map(\.kind) == [.jeep, .lock, .earth, .apps])
     }
 
     @Test func commandClosesTray() {
@@ -233,79 +281,23 @@ struct CarPlaySceneTests {
         #expect(grid.gridButtons.map { $0.titleVariants.first ?? "" } == CarPlayModel.appList.map(\.title))
     }
 
-    @Test func spinModeShowsDoneAndTurnsWithTheArrows() {
-        let fake = FakeCarPlayInterface()
-        var calls: [String] = []
-        let spin = DashboardSpin()
-        spin.send = { calls.append($0) }
-        let t = CarPlayTemplates(
-            interface: fake, open: { _ in }, perform: { _ in }, setRoof: { _ in }, email: { nil }, spin: spin)
-
-        // Not before the first model, and not signed out.
-        t.startSpinMode()
-        #expect(!t.spinMode)
-        t.update(model(snap(), signedIn: false))
-        t.startSpinMode()
-        #expect(!t.spinMode)
-
+    @Test func dragsReachTheJeep() {
+        let rec = Recorder()
+        let g = JeepGestures(motion: DashboardMotion(), setRoof: { rec.roofs.append($0) })
+        g.send = { rec.calls.append($0) }
+        let t = make(FakeCarPlayInterface(), rec, gestures: g)
         t.update(model(snap()))
-        t.tray.open()
-        t.startSpinMode()
-        #expect(t.spinMode)
-        #expect(!t.tray.isOpen)
-        #expect(!t.mapTemplate.automaticallyHidesNavigationBar)
-        #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.map(\.title) == ["Done"])
-        #expect(t.mapTemplate.mapButtons.count == 4)  // CarPlay itself shows only the first two
-        #expect(fake.pushed.isEmpty)  // the map template stays; nothing is pushed
+        t.mapTemplateDidBeginPanGesture(t.mapTemplate)
+        t.mapTemplate(t.mapTemplate, didUpdatePanGestureWithTranslation: CGPoint(x: 12, y: 0), velocity: .zero)
+        t.mapTemplate(t.mapTemplate, didUpdatePanGestureWithTranslation: CGPoint(x: 32, y: 0), velocity: .zero)
+        t.mapTemplate(t.mapTemplate, didEndPanGestureWithVelocity: .zero)
+        #expect(rec.calls == ["spin(8.0)", "release()"])
 
-        // The arrows: a press steps, up and down do nothing, a hold runs until released.
-        t.mapTemplate(t.mapTemplate, panWith: .right)
-        #expect(calls == ["spin(2.5)"])
-        t.mapTemplate(t.mapTemplate, panWith: .up)
-        #expect(calls.count == 1)
-        t.mapTemplate(t.mapTemplate, panBeganWith: .left)
-        #expect(calls.last == "spin(-3.0)")
-        t.mapTemplate(t.mapTemplate, panEndedWith: .left)
-        #expect(calls.last == "release()")
-
-        // Done (its handler is `endSpinMode`): the bars come back and the Jeep is let go.
-        calls = []
-        t.endSpinMode()
-        #expect(!t.spinMode)
-        #expect(calls == ["release()"])
-        #expect(t.mapTemplate.automaticallyHidesNavigationBar)
-        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
-
-        // CarPlay taking the panning interface down itself ends it too.
-        t.startSpinMode()
-        #expect(t.spinMode)
-        t.mapTemplateDidDismissPanningInterface(t.mapTemplate)
-        #expect(!t.spinMode)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
-
-        // Signing out ends it.
-        t.startSpinMode()
-        t.update(model(snap(), signedIn: false))
-        #expect(!t.spinMode)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 1)  // Settings only
-    }
-
-    @Test func spinModeEndsWhenIdle() async throws {
-        let t = CarPlayTemplates(
-            interface: FakeCarPlayInterface(), open: { _ in }, perform: { _ in }, setRoof: { _ in }, email: { nil },
-            spinIdleTimeout: .milliseconds(150))
-        t.update(model(snap()))
-        t.startSpinMode()
-        #expect(t.spinMode)
-        try await Task.sleep(for: .milliseconds(80))
-        t.mapTemplate(t.mapTemplate, panWith: .left)  // any arrow rearms the clock
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(t.spinMode)  // 180 ms in, but only 100 since the arrow
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(!t.spinMode)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
+        rec.calls = []
+        t.mapTemplateDidBeginZoomGesture(t.mapTemplate)
+        t.mapTemplate(t.mapTemplate, didUpdateZoomGestureWithCenter: .zero, scale: 1.2, velocity: 0)
+        t.mapTemplate(t.mapTemplate, didEndZoomGestureWithVelocity: 0)
+        #expect(rec.calls == ["zoom(1.2)", "zoomEnd()"])
     }
 
     @Test func appearanceRedrawsTiles() {
@@ -326,7 +318,7 @@ struct CarPlaySceneTests {
         var templates: CarPlayTemplates? = make(first, rec)
         templates?.update(model(snap()))
         templates?.update(model(snap(locked: false)))
-        templates?.tap(.more)
+        templates?.showMore()
         templates?.showApps()
         templates?.showSettings()
         #expect(first.roots.count == 1)

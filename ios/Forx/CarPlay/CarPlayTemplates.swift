@@ -50,36 +50,30 @@ enum CarPlayDebug {
             chargeMinutesLeft: nil, tiresPsi: ["FL": 36, "FR": 36, "RL": 35, "RR": 36],
             odometerMiles: nil, latitude: 39.7555, longitude: -105.2211,
             supported: [.lock, .unlock, .climateOn, .climateOff, .lights, .horn],
-            updatedAt: now, ignitionOn: false, gasRangeMiles: 165)
+            updatedAt: now.addingTimeInterval(-38 * 60), ignitionOn: false, gasRangeMiles: 165)
         #else
         return nil
         #endif
     }
 }
 
-/// The CarPlay templates: one map template whose buttons are updated in place, plus the
-/// More list, the Apps grid and Settings, pushed on tap. The Apps button opens the tray: the
-/// map buttons become the four favourite apps until one opens, a command runs, or 8 s pass.
-/// The 3D Jeep turns two ways: a sideways drag on cars whose touch screen sends drags to
-/// CarPlay, and Spin mode (the bar button with the turning arrows) for every other car and the
-/// Xcode simulator, which deliver no drags: it opens CarPlay's panning interface, whose left and
-/// right arrows turn the Jeep (press: a step; hold: it keeps turning). Done, 8 s without a
-/// touch, or signing out ends it; the map never pans. The Roof button steps the roof.
+/// The CarPlay templates: one map template whose buttons are updated in place, plus the More
+/// list, the Apps grid and Settings, pushed on tap. Map buttons: Jeep (views), Lock, Earth (the
+/// map) and Apps (the tray: the map buttons become the four favourite apps until one opens, a
+/// command runs, or 8 s pass). Bar buttons (they hide when the screen isn't touched): Roof
+/// (steps the roof, for cars and the simulator that send no drags) and More.
+/// Fingers: CarPlay's pan callbacks (and, on iOS 26 cars, zoom and rotation) reach the 3D Jeep
+/// through `gestures`; the map never pans.
 @MainActor
 final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     let mapTemplate = CPMapTemplate()
-    /// The map buttons now shown, left to right (mirrors `mapTemplate.mapButtons`); empty while
+    /// The map buttons now shown, top to bottom (mirrors `mapTemplate.mapButtons`); empty while
     /// the tray shows its apps instead.
     private(set) var shownButtons: [CarPlayButton] = []
     /// The apps on the map buttons while the tray is open.
     private(set) var shownApps: [CarPlayApp] = []
     let tray: AppTray
-    let spin: DashboardSpin?
-    /// Spin mode: the panning interface is up and its arrows turn the Jeep.
-    private(set) var spinMode = false
-    /// Spin mode ends after this long without an arrow or a drag.
-    let spinIdleTimeout: Duration
-    private var spinIdle: Task<Void, Never>? = nil
+    let gestures: JeepGestures?
     /// What the map buttons were last drawn for, so an unchanged state reassigns nothing.
     private var mapKey: MapKey?
 
@@ -101,7 +95,8 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private struct BarsKey: Equatable {
         let signedIn: Bool
         let trayOpen: Bool
-        let spinMode: Bool
+        let roof: String
+        let dark: Bool
     }
     /// The rows / settings the on-screen lists were last filled with.
     private var moreListRows: [CarPlayRow] = []
@@ -119,6 +114,9 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     static let maxMapButtons = 4
     static let maxGridButtons = 8
 
+    /// The dashboard's state the buttons change (the map, the Jeep's view).
+    var motion: DashboardMotion? { gestures?.motion }
+
     init(
         interface: any CarPlayInterface,
         open: @escaping (URL) -> Void,
@@ -126,23 +124,22 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         setRoof: @escaping (String) -> Void = { AppModel.roof = $0 },
         email: @escaping () -> String? = { AppModel.store.email },
         tray: AppTray = AppTray(),
-        spin: DashboardSpin? = nil,
-        spinIdleTimeout: Duration = .seconds(8)
+        gestures: JeepGestures? = nil
     ) {
         self.interface = interface
         self.open = open
         self.perform = perform
         self.tray = tray
-        self.spin = spin
-        self.spinIdleTimeout = spinIdleTimeout
+        self.gestures = gestures
         self.setRoof = setRoof
         self.email = email
         super.init()
+        gestures?.closeMap = { [weak self] in self?.setMap(open: false) }
         // The host's view controller (share button, etc.) talks to the delegate; without one
         // it crashes CarPlayTemplateUIHost. Set before the template becomes root.
         if !CarPlayDebug.skipMapDelegate { mapTemplate.mapDelegate = self }
-        // Search and Apps fade away when the screen isn't touched (the cards then take the full
-        // height) and come back on any touch. The map buttons stay.
+        // Roof and More fade away when the screen isn't touched and come back on any touch.
+        // The map buttons stay.
         mapTemplate.automaticallyHidesNavigationBar = true
         mapTemplate.hidesButtonsWithNavigationBar = false
         if CarPlayDebug.listRoot {
@@ -165,97 +162,56 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         false
     }
 
-    // MARK: Drags → 3D Jeep
+    // MARK: Fingers → 3D Jeep
 
-    /// Touch-screen drags, with or without the panning interface. Apple: "May not be called when
-    /// connected to some CarPlay systems"; the Xcode simulator's CarPlay window sends none, so
-    /// Spin mode's arrows are the sure route. The map never pans.
+    /// Touch-screen drags. Apple: "May not be called when connected to some CarPlay systems";
+    /// the Xcode simulator's CarPlay window sends none, so the Roof bar button and the Jeep
+    /// button cover what a drag does there. The map never pans.
     func mapTemplateDidBeginPanGesture(_ mapTemplate: CPMapTemplate) {
         panLog.notice("pan began")
-        spinIdle?.cancel()
-        spin?.began()
+        gestures?.began()
     }
 
     func mapTemplate(
         _ mapTemplate: CPMapTemplate, didUpdatePanGestureWithTranslation translation: CGPoint, velocity: CGPoint
     ) {
-        spin?.changed(translation)
+        gestures?.changed(translation)
     }
 
     func mapTemplate(_ mapTemplate: CPMapTemplate, didEndPanGestureWithVelocity velocity: CGPoint) {
         panLog.notice("pan ended")
-        spin?.ended(velocity)
-        if spinMode { armSpinIdle() }
+        gestures?.ended(velocity)
     }
 
-    // MARK: Spin mode (the panning interface) → 3D Jeep
-
-    /// The Spin bar button: opens CarPlay's panning interface. Its arrows turn the Jeep; the bar
-    /// shows Done. CarPlay keeps at most two map buttons visible meanwhile (Lock and Climate).
-    func startSpinMode() {
-        guard !spinMode, let model, model.signedIn else { return }
-        panLog.notice("spin mode on")
-        spinMode = true
-        tray.close()
-        mapTemplate.automaticallyHidesNavigationBar = false  // Done stays on screen
-        mapTemplate.showPanningInterface(animated: true)
-        update(model, dark: mapKey?.dark ?? true)
-        armSpinIdle()
+    /// Two fingers (iOS 26 cars): a pinch zooms the Jeep, a twist turns it.
+    func mapTemplateDidBeginZoomGesture(_ mapTemplate: CPMapTemplate) {
+        panLog.notice("zoom began")
+        gestures?.zoomBegan()
     }
 
-    /// Done, idle, sign-out, or CarPlay took the panning interface down itself.
-    func endSpinMode() {
-        guard spinMode else { return }
-        leaveSpinMode()
-        if let model { update(model, dark: mapKey?.dark ?? true) }
+    func mapTemplate(
+        _ mapTemplate: CPMapTemplate, didUpdateZoomGestureWithCenter center: CGPoint, scale: CGFloat, velocity: CGFloat
+    ) {
+        gestures?.zoom(scale: scale)
     }
 
-    /// The state change alone; the caller refreshes the bars.
-    private func leaveSpinMode() {
-        panLog.notice("spin mode off")
-        spinMode = false
-        spinIdle?.cancel()
-        spinIdle = nil
-        spin?.settle()
-        mapTemplate.automaticallyHidesNavigationBar = true
-        mapTemplate.dismissPanningInterface(animated: true)  // nothing if it's already gone
+    func mapTemplate(_ mapTemplate: CPMapTemplate, didEndZoomGestureWithVelocity velocity: CGFloat) {
+        gestures?.zoomEnded()
     }
 
-    private func armSpinIdle() {
-        spinIdle?.cancel()
-        spinIdle = Task { [weak self, timeout = spinIdleTimeout] in
-            try? await Task.sleep(for: timeout)
-            guard !Task.isCancelled else { return }
-            self?.endSpinMode()
-        }
+    func mapTemplateDidBeginRotationGesture(_ mapTemplate: CPMapTemplate) {
+        panLog.notice("rotation began")
+        gestures?.rotationBegan()
     }
 
-    func mapTemplateDidShowPanningInterface(_ mapTemplate: CPMapTemplate) {
-        panLog.notice("panning interface shown")
+    func mapTemplate(
+        _ mapTemplate: CPMapTemplate, didRotateWithCenter center: CGPoint, rotation: CGFloat, velocity: CGFloat
+    ) {
+        gestures?.rotate(rotation)
     }
 
-    func mapTemplateDidDismissPanningInterface(_ mapTemplate: CPMapTemplate) {
-        panLog.notice("panning interface dismissed")
-        endSpinMode()
-    }
-
-    /// An arrow pressed momentarily: one step.
-    func mapTemplate(_ mapTemplate: CPMapTemplate, panWith direction: CPMapTemplate.PanDirection) {
-        guard let sign = CarPlaySpinArrows.turn(direction) else { return }
-        spin?.step(sign)
-        if spinMode { armSpinIdle() }
-    }
-
-    /// An arrow held: it keeps turning until released.
-    func mapTemplate(_ mapTemplate: CPMapTemplate, panBeganWith direction: CPMapTemplate.PanDirection) {
-        guard let sign = CarPlaySpinArrows.turn(direction) else { return }
-        spinIdle?.cancel()
-        spin?.hold(sign)
-    }
-
-    func mapTemplate(_ mapTemplate: CPMapTemplate, panEndedWith direction: CPMapTemplate.PanDirection) {
-        spin?.holdEnded()
-        if spinMode { armSpinIdle() }
+    func mapTemplate(_ mapTemplate: CPMapTemplate, rotationDidEndWithVelocity velocity: CGFloat) {
+        gestures?.rotationEnded()
     }
 
     // MARK: Model → templates
@@ -265,9 +221,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     /// colours). Reads `tray.isOpen`, so a caller under observation rebuilds when it changes.
     func update(_ model: CarPlayModel, dark: Bool = true) {
         self.model = model
+        gestures?.roof = model.roofKey
         let trayOpen = model.signedIn && tray.isOpen
         if !model.signedIn && tray.isOpen { tray.close() }
-        if !model.signedIn && spinMode { leaveSpinMode() }  // the bars follow below
+        if !model.signedIn, let motion, motion.mapOpen || motion.mode != .hero {
+            motion.mapOpen = false
+            motion.mode = .hero
+        }
         let buttons = model.signedIn ? Array(model.buttons.prefix(Self.maxMapButtons)) : []
         let key = MapKey(buttons: buttons, dark: dark, trayOpen: trayOpen)
         if key != mapKey {
@@ -287,7 +247,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             }
         }
 
-        let bars = BarsKey(signedIn: model.signedIn, trayOpen: trayOpen, spinMode: spinMode)
+        let bars = BarsKey(signedIn: model.signedIn, trayOpen: trayOpen, roof: model.roofKey, dark: dark)
         if bars != barsKey {
             barsKey = bars
             setBarButtons(bars)
@@ -308,24 +268,16 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     private func setBarButtons(_ key: BarsKey) {
         if CarPlayDebug.skipBarButtons { return }
-        if key.spinMode {
-            // CarPlay provides no way out of the panning interface; the app must.
-            mapTemplate.leadingNavigationBarButtons = []
-            mapTemplate.trailingNavigationBarButtons = [
-                CPBarButton(title: "Done") { [weak self] _ in self?.endSpinMode() },
-            ]
-        } else if key.signedIn {
-            var leading = [barButton("magnifyingglass") { $0.tapSearch() }]
+        if key.signedIn {
             // In tray mode: the full grid of apps, one tap away.
-            if key.trayOpen {
-                leading.append(CPBarButton(title: "All apps") { [weak self] _ in self?.showApps() })
-            }
-            mapTemplate.leadingNavigationBarButtons = leading
+            mapTemplate.leadingNavigationBarButtons = key.trayOpen
+                ? [CPBarButton(title: "All apps") { [weak self] _ in self?.showApps() }]
+                : []
+            // Roof: the top-view Jeep for the roof it's on; a tap steps it (the strip's template path)
+            let roofImage = Self.roofGlyph(key.roof, colour: key.dark ? .white : Self.ink, height: 24)
             mapTemplate.trailingNavigationBarButtons = [
-                // Spin: turn the Jeep with CarPlay's pan arrows
-                barButton("rotate.3d") { $0.startSpinMode() },
-                // Apps: filled while the tray is open
-                barButton(key.trayOpen ? "square.grid.3x3.fill" : "square.grid.3x3") { $0.toggleTray() },
+                CPBarButton(image: roofImage) { [weak self] _ in self?.stepRoof() },
+                barButton("ellipsis") { $0.showMore() },
             ]  // Settings lives at the bottom of More
         } else {
             mapTemplate.leadingNavigationBarButtons = []
@@ -341,25 +293,41 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         guard let button = shownButtons.first(where: { $0.kind == kind }) else { return }
         // A pending button waits for the Jeep; taps do nothing.
         guard button.state != .pending else { return }
-        tray.close()
         switch kind {
         case .lock:
+            tray.close()
             // Unlock only when known locked; unknown or unlocked locks.
             perform(button.isLocked == true ? .unlock : .lock)
-        case .climate:
-            perform(button.state == .on ? .climateOff : .climateOn)
-        case .roof:
-            // Top on → Panels → Top off → Doors off → Top on; the 3D Jeep follows the roof.
-            setRoof(CarPlayModel.nextRoof(after: button.roof ?? "on"))
-        case .more:
-            showMore()
+        case .earth:
+            tray.close()
+            setMap(open: !(motion?.mapOpen ?? false))
+        case .jeep:
+            tray.close()
+            if let motion { motion.mode = motion.mode.next }
+            refresh()
+        case .apps:
+            toggleTray()
         }
+    }
+
+    /// Opens or closes the map; the dashboard slides the Jeep over and the Earth button lights.
+    func setMap(open: Bool) {
+        guard let motion, motion.mapOpen != open else { return }
+        motion.mapOpen = open
+        motion.dividerDx = 0
+        refresh()
+    }
+
+    /// The Roof bar button: Top on → Panels → Top off → Doors off → Top on; the 3D Jeep follows.
+    func stepRoof() {
+        guard let model, model.signedIn else { return }
+        setRoof(CarPlayModel.nextRoof(after: model.roofKey))
     }
 
     /// Opens or closes the Apps tray; the next `update` swaps the map buttons.
     func toggleTray() {
         tray.toggle()
-        if let model { update(model, dark: mapKey?.dark ?? true) }
+        refresh()
     }
 
     /// A favourite app on the map buttons (tray mode): opens it and closes the tray.
@@ -367,12 +335,31 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         guard shownApps.indices.contains(index) else { return }
         let url = shownApps[index].url
         tray.close()
-        if let model { update(model, dark: mapKey?.dark ?? true) }
+        refresh()
         open(url)
     }
 
-    func tapSearch() {
-        open(URL(string: "maps://")!)
+    /// Redraws for the state the buttons just changed (the scene rebuilds the rest under observation).
+    private func refresh() {
+        guard let model else { return }
+        update(withMotion(model), dark: mapKey?.dark ?? true)
+    }
+
+    /// `model` with the Earth and Jeep buttons for the motion's state now.
+    private func withMotion(_ model: CarPlayModel) -> CarPlayModel {
+        guard let motion else { return model }
+        let buttons = model.buttons.map { b -> CarPlayButton in
+            switch b.kind {
+            case .earth: CarPlayButton(kind: .earth, state: motion.mapOpen ? .on : .off, symbol: b.symbol, isLocked: nil)
+            case .jeep: CarPlayButton(kind: .jeep, state: motion.mode == .hero ? .off : .on, symbol: b.symbol, isLocked: nil)
+            default: b
+            }
+        }
+        return CarPlayModel(
+            signedIn: model.signedIn, gear: model.gear, rangeText: model.rangeText, evText: model.evText,
+            chargeText: model.chargeText, tires: model.tires, tiresAgo: model.tiresAgo, roofKey: model.roofKey,
+            mode: motion.mode, mapOpen: motion.mapOpen, message: model.message, buttons: buttons,
+            more: model.more, apps: model.apps)
     }
 
     /// Does nothing if More is already on screen (no double push).
@@ -413,12 +400,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private func moreSections() -> [CPListSection] {
         let items = (model?.more ?? []).map { row -> CPListItem in
             let item = CPListItem(text: row.title, detailText: row.detail)
-            if let key = row.roofKey {
-                item.handler = { [weak self] _, completion in
-                    self?.setRoof(key)
-                    completion()
-                }
-            } else if let cmd = row.action {
+            if let cmd = row.action {
                 item.handler = { [weak self] _, completion in
                     self?.tray.close()
                     self?.perform(cmd)
@@ -465,12 +447,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     static let gridIcon: CGFloat = 54
     static let tileSide: CGFloat = 44
+    static let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
 
     private func mapButton(_ b: CarPlayButton, dark: Bool) -> CPMapButton {
         let kind = b.kind
         let button = CPMapButton { [weak self] _ in self?.tap(kind) }
-        if kind == .roof {
-            button.image = Self.roofTile(b.roof ?? "on", dark: dark)
+        if kind == .jeep {
+            button.image = Self.jeepTile(state: b.state, dark: dark)
         } else {
             button.image = Self.tile(symbol: b.symbol, state: b.state, dark: dark)
         }
@@ -504,13 +487,13 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         return tile(glyph: symbolImage, state: state, dark: dark)
     }
 
-    /// The Roof button: the off tile (it's a mode, not on/off) with a drawn top-view Jeep for `roof`.
-    static func roofTile(_ roof: String, dark: Bool = true) -> UIImage {
-        tile(glyph: roofGlyph(roof, colour: glyphColour(state: .off, dark: dark)), state: .off, dark: dark)
+    /// The Jeep button: Milan's front-view Jeep, 22 pt wide, on the tile (blue while a view other
+    /// than the hero is up).
+    static func jeepTile(state: CarPlayButtonState, dark: Bool = true) -> UIImage {
+        tile(glyph: asset("jeep-front", colour: glyphColour(state: state, dark: dark), width: 22), state: state, dark: dark)
     }
 
     private static func glyphColour(state: CarPlayButtonState, dark: Bool) -> UIColor {
-        let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
         let off = dark ? UIColor.white : ink
         switch state {
         case .off: return off
@@ -530,10 +513,21 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }
     }
 
-    /// The top-view Jeep for `roof`, 26 pt tall, in `colour`.
+    /// The top-view Jeep for `roof`, `height` pt tall, in `colour`.
     static func roofGlyph(_ roof: String, colour: UIColor, height: CGFloat = 26) -> UIImage {
-        guard let art = UIImage(named: roofAsset(roof)) else { return UIImage() }
-        let size = CGSize(width: (art.size.width * height / max(1, art.size.height)).rounded(), height: height)
+        asset(roofAsset(roof), colour: colour, height: height)
+    }
+
+    /// A bundled template image drawn in `colour` at the given width or height (3x).
+    static func asset(_ name: String, colour: UIColor, width: CGFloat? = nil, height: CGFloat? = nil) -> UIImage {
+        guard let art = UIImage(named: name), art.size.width > 0, art.size.height > 0 else { return UIImage() }
+        let size: CGSize
+        if let width {
+            size = CGSize(width: width, height: (art.size.height * width / art.size.width).rounded())
+        } else {
+            let h = height ?? 26
+            size = CGSize(width: (art.size.width * h / art.size.height).rounded(), height: h)
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 3
         return UIGraphicsImageRenderer(size: size, format: format).image { _ in

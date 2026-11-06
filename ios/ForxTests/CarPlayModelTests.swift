@@ -10,23 +10,24 @@ struct CarPlayModelTests {
         doorsOpen: [String] = [], tailgate: Bool? = nil, charging: Bool? = false,
         pluggedIn: Bool? = false, chargeMinutes: Int? = nil, odometer: Int? = 7671,
         tires: [String: Int] = ["FL": 35, "FR": 35, "RL": 34],
-        supported: Set<JeepCommand> = Set(JeepCommand.allCases)
+        supported: Set<JeepCommand> = Set(JeepCommand.allCases), age: TimeInterval = 0
     ) -> JeepSnapshot {
         JeepSnapshot(
             nickname: nil, locked: locked, doorsOpen: doorsOpen, tailgateOpen: tailgate,
             rangeMiles: range, fuelPercent: nil, evPercent: ev, pluggedIn: pluggedIn,
             charging: charging, chargeMinutesLeft: chargeMinutes, tiresPsi: tires,
             odometerMiles: odometer, latitude: nil, longitude: nil, supported: supported,
-            updatedAt: now, ignitionOn: ignition, gasRangeMiles: nil)
+            updatedAt: now.addingTimeInterval(-age), ignitionOn: ignition, gasRangeMiles: nil)
     }
 
     private func model(
         _ s: JeepSnapshot?, pending: Set<JeepCommand> = [], climateOn: Bool = false,
-        message: String? = nil, signedIn: Bool = true, roof: String = "on"
+        message: String? = nil, signedIn: Bool = true, roof: String = "on",
+        mode: JeepMode = .hero, mapOpen: Bool = false
     ) -> CarPlayModel {
         CarPlayModel.make(
             snapshot: s, pending: pending, climateOn: climateOn, message: message,
-            signedIn: signedIn, roof: roof, now: now, timeZone: TimeZone(identifier: "UTC")!)
+            signedIn: signedIn, roof: roof, mode: mode, mapOpen: mapOpen, now: now, timeZone: TimeZone(identifier: "UTC")!)
     }
 
     private func button(_ m: CarPlayModel, _ kind: CarPlayButtonKind) -> CarPlayButton? {
@@ -41,18 +42,18 @@ struct CarPlayModelTests {
         // Only the cached snapshot is available (the phone app was never opened).
         let m = model(snap())
         #expect(m.signedIn)
-        #expect(m.name == "Milan")
+        #expect(m.gear == "P")
         #expect(m.rangeText == "186")
         #expect(m.evText == "78%")
-        #expect(m.statusWord == "Locked")
-        #expect(m.statusSymbol == "lock.fill")
-        #expect(m.statusTint == .green)
-        #expect(m.buttons.map(\.kind) == [.lock, .climate, .roof, .more])
-        #expect(button(m, .roof)?.roof == "on")
-        #expect(button(m, .roof)?.state == .off)
-        #expect(m.roofWord == "Top on")
+        #expect(m.buttons.map(\.kind) == [.jeep, .lock, .earth, .apps])
         #expect(button(m, .lock)?.symbol == "lock.fill")
         #expect(button(m, .lock)?.state == .off)
+        #expect(button(m, .earth)?.state == .off)
+        #expect(button(m, .jeep)?.state == .off)
+        #expect(button(m, .apps)?.symbol == "circle.grid.3x3.fill")
+        #expect(m.roofKey == "on")
+        #expect(m.mode == .hero)
+        #expect(!m.mapOpen)
         #expect(row(m, "Tires")?.detail == "FL 35 · FR 35 · RL 34 · RR —")
         #expect(row(m, "Trip")?.detail == "7,671 mi")
         #expect(row(m, "Charging")?.detail == "Unplugged")
@@ -65,6 +66,17 @@ struct CarPlayModelTests {
         #expect(model(nil, signedIn: false).buttons.isEmpty)
     }
 
+    @Test func earthAndJeepButtonsShowTheMotion() {
+        let m = model(snap(), mode: .turntable, mapOpen: true)
+        #expect(button(m, .earth)?.state == .on)
+        #expect(button(m, .jeep)?.state == .on)
+        #expect(m.mode == .turntable)
+        #expect(m.mapOpen)
+        #expect(JeepMode.hero.next == .turntable)
+        #expect(JeepMode.turntable.next == .tires)
+        #expect(JeepMode.tires.next == .hero)
+    }
+
     @Test func pendingThenFailureRevertsButton() {
         let s = snap(locked: true)
         let sent = model(s, pending: [.unlock])
@@ -75,52 +87,52 @@ struct CarPlayModelTests {
         #expect(button(failed, .lock)?.state == .off)
         #expect(button(failed, .lock)?.symbol == "lock.fill")
 
-        let climateSent = model(s, pending: [.climateOn], climateOn: false)
-        #expect(button(climateSent, .climate)?.state == .pending)
-        #expect(button(model(s, climateOn: false), .climate)?.state == .off)
-        #expect(button(model(s, climateOn: true), .climate)?.state == .on)
+        // Climate lives in More now: pending shows "…", on shows "On"
+        #expect(row(model(s, pending: [.climateOn]), "Climate")?.detail == "…")
+        #expect(row(model(s, climateOn: false), "Climate")?.detail == "")
+        #expect(row(model(s, climateOn: true), "Climate")?.detail == "On")
+        #expect(row(model(s, climateOn: true), "Climate")?.action == .climateOff)
+        #expect(row(model(s, climateOn: false), "Climate")?.action == .climateOn)
     }
 
     @Test func unsupportedCommandsHidden() {
         let m = model(snap(supported: [.lock, .unlock]))
-        #expect(m.buttons.map(\.kind) == [.lock, .roof, .more])
-        let titles = m.more.map(\.title)
-        #expect(!titles.contains("Horn"))
-        #expect(!titles.contains("Tailgate"))
-        #expect(!titles.contains("Lights"))
-        #expect(titles == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Trip"])
-        #expect(m.more.filter(\.roof).map(\.title) == ["Top on", "Panels off", "Top off", "Doors off"])
-        #expect(m.more.compactMap(\.roofKey) == ["on", "panels", "off", "doorsOff"])
-        #expect(m.more.compactMap(\.roofKey) == CarPlayModel.roofSteps)
-        #expect(m.more.filter { !$0.roof }.allSatisfy { $0.roofKey == nil })
+        #expect(m.buttons.map(\.kind) == [.jeep, .lock, .earth, .apps])
+        #expect(m.more.map(\.title) == ["Tires", "Charging", "Trip"])
         #expect(m.buttons.first { $0.kind == .lock }?.isLocked == true)
         #expect(model(snap(locked: nil)).buttons.first { $0.kind == .lock }?.isLocked == nil)
 
         let all = model(snap())
-        #expect(all.more.map(\.title)
-            == ["Tires", "Charging", "Top on", "Panels off", "Top off", "Doors off", "Lights", "Horn", "Tailgate", "Trip"])
+        #expect(all.more.map(\.title) == ["Climate", "Lights", "Horn", "Tailgate", "Tires", "Charging", "Trip"])
         #expect(row(all, "Lights")?.action == .lights)
         #expect(row(all, "Horn")?.action == .horn)
         #expect(row(all, "Tailgate")?.action == .gate)
 
-        // No snapshot: only More, and data rows show "—".
+        // No lock support: no Lock button.
+        #expect(model(snap(supported: [.climateOn])).buttons.map(\.kind) == [.jeep, .earth, .apps])
+
+        // No snapshot: data rows show "—".
         let none = model(nil)
-        #expect(none.buttons.map(\.kind) == [.roof, .more])
+        #expect(none.buttons.map(\.kind) == [.jeep, .earth, .apps])
         #expect(row(none, "Trip")?.detail == "—")
         #expect(row(none, "Charging")?.detail == "—")
         #expect(row(none, "Tires")?.detail == "FL — · FR — · RL — · RR —")
+        #expect(none.tires == ["FL": "—", "FR": "—", "RL": "—", "RR": "—"])
+        #expect(none.tiresAgo == "—")
     }
 
-    @Test func headerCopy() {
+    @Test func statusRowCopy() {
         #expect(model(snap(range: 186, ev: 78)).rangeText == "186")
         #expect(model(snap(range: 186, ev: 78)).evText == "78%")
-        // Driving or parked: no words for it.
-        #expect(model(snap(ignition: true)).rangeText == "186")
+        #expect(model(snap(ignition: true)).gear == "D")
+        #expect(model(snap(ignition: nil)).gear == "P")
+        #expect(model(nil).gear == "P")
         // Unknown: "—" for the number only; no battery.
         #expect(model(nil).rangeText == "—")
         #expect(model(nil).evText == nil)
         #expect(model(snap(range: nil, ev: nil)).rangeText == "—")
         #expect(model(snap(range: nil, ev: nil)).evText == nil)
+        #expect(CarPlayModel.gearLetters == ["P", "R", "N", "D"])
     }
 
     @Test func appsOrderAndCap() {
@@ -141,27 +153,6 @@ struct CarPlayModelTests {
         ])
     }
 
-    @Test func statusCopy() {
-        let unlocked = model(snap(locked: false))
-        #expect(unlocked.statusWord == "Unlocked")
-        #expect(unlocked.statusSymbol == "lock.open.fill")
-        #expect(unlocked.statusTint == .amber)
-        let door = model(snap(doorsOpen: ["driver"]))
-        #expect(door.statusWord == "Door open")
-        #expect(door.statusTint == .amber)
-        #expect(model(snap(doorsOpen: ["driver", "rightRear"])).statusWord == "Door open")
-        #expect(model(snap(tailgate: true)).statusWord == "Tailgate open")
-        // An open door wins over the tailgate and the lock.
-        #expect(model(snap(locked: false, doorsOpen: ["passenger"], tailgate: true)).statusWord == "Door open")
-        #expect(model(snap(locked: false, tailgate: true)).statusWord == "Tailgate open")
-        // Unknown shows nothing.
-        let unknown = model(snap(locked: nil))
-        #expect(unknown.statusWord == nil)
-        #expect(unknown.statusSymbol == nil)
-        #expect(unknown.statusTint == nil)
-        #expect(model(nil).statusWord == nil)
-    }
-
     @Test func lockSymbolAndState() {
         let open = model(snap(locked: false))
         #expect(button(open, .lock)?.symbol == "lock.open.fill")
@@ -169,7 +160,7 @@ struct CarPlayModelTests {
         let unknown = model(snap(locked: nil))
         #expect(button(unknown, .lock)?.symbol == "lock.fill")
         #expect(button(unknown, .lock)?.state == .off)
-        #expect(button(model(snap()), .more)?.symbol == "ellipsis")
+        #expect(button(model(snap()), .earth)?.symbol == "globe.americas.fill")
     }
 
     @Test func roofCyclesOnPanelsOffDoorsOff() {
@@ -178,28 +169,41 @@ struct CarPlayModelTests {
         #expect(CarPlayModel.nextRoof(after: "off") == "doorsOff")
         #expect(CarPlayModel.nextRoof(after: "doorsOff") == "on")
         #expect(CarPlayModel.nextRoof(after: "bogus") == "panels")
+        #expect(CarPlayModel.roofIndex("on") == 0)
+        #expect(CarPlayModel.roofIndex("doorsOff") == 3)
+        #expect(CarPlayModel.roofIndex("bogus") == 0)
+        #expect(model(snap(), roof: "panels").roofKey == "panels")
+        #expect(model(snap(), roof: "bogus").roofKey == "on")
+        #expect(CarPlayModel.roofTitle("off") == "Top off")
     }
 
-    @Test func roofCheckAndCharging() {
-        let m = model(snap(), roof: "panels")
-        #expect(row(m, "Top on")?.detail == "")
-        #expect(row(m, "Panels off")?.detail == "✓")
-        #expect(row(m, "Top off")?.detail == "")
-        #expect(row(m, "Doors off")?.detail == "")
-        #expect(row(model(snap(), roof: "doorsOff"), "Doors off")?.detail == "✓")
-        // the Roof button shows the roof, the status line names it
-        #expect(button(m, .roof)?.roof == "panels")
-        #expect(m.roofWord == "Panels off")
-        #expect(model(snap(), roof: "off").roofWord == "Top off")
-        #expect(model(snap(), roof: "doorsOff").roofWord == "Doors off")
-        #expect(button(model(snap(), roof: "bogus"), .roof)?.roof == "on")
-        #expect(m.more.filter(\.roof).allSatisfy { $0.action == nil })
-
+    @Test func chargeCalloutAndChargingRow() {
         // now is 2026-10-24 12:00 UTC; 130 min → 2:10 PM.
         let charging = model(snap(charging: true, pluggedIn: true, chargeMinutes: 130))
+        #expect(charging.chargeText == "Charging · full by 2:10 PM")
         #expect(row(charging, "Charging")?.detail == "Charging · full by 2:10 PM")
-        #expect(row(model(snap(charging: true, pluggedIn: true)), "Charging")?.detail == "Charging")
+        #expect(model(snap(charging: true, pluggedIn: true)).chargeText == "Charging")
+        #expect(model(snap(pluggedIn: true)).chargeText == "Plugged in")
         #expect(row(model(snap(pluggedIn: true)), "Charging")?.detail == "Plugged in")
+        // unplugged or unknown: no call-out
+        #expect(model(snap()).chargeText == nil)
+        #expect(model(snap(pluggedIn: nil)).chargeText == nil)
+        #expect(row(model(snap(pluggedIn: nil)), "Charging")?.detail == "—")
+        #expect(model(nil).chargeText == nil)
+    }
+
+    @Test func tiresAndTheirAge() {
+        let m = model(snap(tires: ["FL": 36, "FR": 36, "RL": 35, "RR": 36], age: 38 * 60))
+        #expect(m.tires == ["FL": "36", "FR": "36", "RL": "35", "RR": "36"])
+        #expect(m.tiresAgo == "38 minutes ago")
+        #expect(model(snap()).tiresAgo == "just now")
+        #expect(model(snap(age: 59)).tiresAgo == "just now")
+        #expect(model(snap(age: 61)).tiresAgo == "1 minute ago")
+        #expect(model(snap(age: 3600)).tiresAgo == "1 hour ago")
+        #expect(model(snap(age: 5 * 3600)).tiresAgo == "5 hours ago")
+        #expect(model(snap(age: 26 * 3600)).tiresAgo == "yesterday")
+        #expect(model(snap(age: 3 * 86400)).tiresAgo == "3 days ago")
+        #expect(CarPlayModel.ago(from: now.addingTimeInterval(60), to: now) == "just now")  // the future counts as now
     }
 
     @Test func messagePassesThrough() {

@@ -3,20 +3,28 @@ import SwiftUI
 
 // MARK: - Layout (pure, tested)
 
-/// Sizes for the CarPlay window's safe area: two cards side by side, the Jeep card (35% of the
-/// width) on the left and the globe card on the right, same top and bottom (6 pt in), 10 pt apart,
-/// 6 pt in from the sides. Type is set in points for a 360 pt tall area and shrinks on shorter
-/// ones down to a readable floor.
+/// Sizes for the CarPlay window's safe area. The 3D page fills it; the car lives in a region that
+/// keeps clear of the status row (top), CarPlay's map-button column (right) and, with the map
+/// open, the map (the right 54%). Type is set in points for a 360 pt tall area and shrinks on
+/// shorter ones down to a readable floor.
 nonisolated struct DashboardLayout: Equatable, Sendable {
     static let designHeight: CGFloat = 360
-    static let panelShare: CGFloat = 0.35
-    /// Cards to the safe area's edges.
-    static let edge: CGFloat = 6
-    /// Between the two cards.
-    static let gap: CGFloat = 10
-    static let cardRadius: CGFloat = 24
-    /// The tray's inset from the globe card's top-right corner.
-    static let cardInset: CGFloat = 12
+    /// CarPlay's map buttons: a 44 pt column with its margins, at the trailing edge.
+    static let buttonColumn: CGFloat = 70
+    /// The status row's band at the top.
+    static let statusBand: CGFloat = 40
+    static let bottomInset: CGFloat = 6
+    /// With the map open the car keeps this share of the width; the map takes the rest.
+    static let jeepShare: CGFloat = 0.46
+    /// Between the car's region and the divider.
+    static let dividerGap: CGFloat = 10
+    /// The map buttons' pitch and the bottom one's centre above the bottom edge (CarPlay's own).
+    static let buttonPitch: CGFloat = 44
+    static let buttonBottom: CGFloat = 22.5
+    /// The loading Jeep's width.
+    static let loaderWidth: CGFloat = 180
+    /// The map slides over this curve, and so does the car (the page shares it).
+    static let slide = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.52)
 
     /// The safe area's size.
     let size: CGSize
@@ -26,78 +34,55 @@ nonisolated struct DashboardLayout: Equatable, Sendable {
         min(pt, max(floor, pt * size.height / Self.designHeight))
     }
 
-    private var cardHeight: CGFloat { max(0, size.height - 2 * Self.edge) }
+    /// Where the map's leading edge rests while open.
+    var splitX: CGFloat { (size.width * Self.jeepShare).rounded() }
 
-    /// The Jeep card, in safe-area coordinates.
-    var jeepCard: CGRect {
-        CGRect(x: Self.edge, y: Self.edge, width: (size.width * Self.panelShare).rounded(), height: cardHeight)
+    /// How far the divider can be dragged to the right edge.
+    var dividerTravel: CGFloat { max(1, size.width - splitX) }
+
+    /// The car's region on the page: the whole area less the status band and the button column,
+    /// or (map open) up to the divider less a gap. `dividerDx` is a finger's live pull to the right.
+    func region(mapOpen: Bool, dividerDx: CGFloat = 0) -> CGRect {
+        let right = mapOpen
+            ? min(size.width - Self.buttonColumn, splitX + dividerDx - Self.dividerGap)
+            : size.width - Self.buttonColumn
+        return CGRect(
+            x: 0, y: Self.statusBand, width: max(1, right),
+            height: max(1, size.height - Self.statusBand - Self.bottomInset))
     }
 
-    /// The globe card, in safe-area coordinates.
-    var card: CGRect {
-        let x = jeepCard.maxX + Self.gap
-        return CGRect(x: x, y: Self.edge, width: max(0, size.width - Self.edge - x), height: cardHeight)
+    /// The region as the page takes it: `{x0, y0, x1, y1}` in CSS pixels (points).
+    static func regionJSON(_ r: CGRect) -> String {
+        "{\"x0\":\(Int(r.minX.rounded())),\"y0\":\(Int(r.minY.rounded())),\"x1\":\(Int(r.maxX.rounded())),\"y1\":\(Int(r.maxY.rounded()))}"
     }
 
-    // MARK: Jeep card (card coordinates), top to bottom
+    /// The map: from the divider to the trailing edge, full height. Closed: just off the right edge.
+    func mapFrame(open: Bool, dividerDx: CGFloat = 0) -> CGRect {
+        let x = open ? splitX + dividerDx : size.width
+        return CGRect(x: x, y: 0, width: max(1, size.width - splitX), height: size.height)
+    }
 
-    static let pad: CGFloat = 18
-
-    /// "Milan", small and secondary, at the top.
-    var nameTop: CGFloat { Self.pad }
-    var nameFont: CGFloat { type(12, floor: 11) }
-    var nameLine: CGFloat { (nameFont * 1.25).rounded() }
-
-    /// The range under it (34 pt at 360 pt), the battery on the same row, right-aligned.
-    var heroTop: CGFloat { nameTop + nameLine }
-    var heroFont: CGFloat { type(34, floor: 26) }
-    var unitFont: CGFloat { type(15, floor: 12) }
-    var heroLine: CGFloat { (heroFont * 1.2).rounded() }
-    var energyFont: CGFloat { type(13, floor: 11) }
-
-    /// Narrow cards drop the battery capsule and percentage.
-    var showsBattery: Bool { jeepCard.width >= 150 }
-
-    /// The status line: 18 from the left, its bottom 16 above the card's.
+    /// The status row's origin and type.
+    var statusOrigin: CGPoint { CGPoint(x: 20, y: 13) }
     var statusFont: CGFloat { type(13, floor: 11) }
-    var statusLineHeight: CGFloat { (statusFont * 1.3).rounded() }
-    var statusBottom: CGFloat { jeepCard.height - 16 }
 
-    /// The 3D Jeep: the card's full width, from under the range row (y 74 at 360 pt) to 38 pt
-    /// above the card's bottom; clipped to the card, so its floor fades inside it.
-    var jeep: CGRect {
-        let top = heroTop + heroLine
-        return CGRect(x: 0, y: top, width: jeepCard.width, height: max(0, jeepCard.height - 38 - top))
+    /// The centre y of CarPlay's map buttons, top to bottom, for `count` buttons.
+    func buttonCentres(count: Int) -> [CGFloat] {
+        (0..<max(0, count)).map { i in
+            size.height - Self.buttonBottom - CGFloat(count - 1 - i) * Self.buttonPitch
+        }
     }
 
-    // MARK: Right card (card coordinates)
-
-    /// The globe: 1.5 × the card height across, its centre 60% across and low,
-    /// so it runs off the bottom and right.
-    var globeDiameter: CGFloat { card.height * 1.5 }
-    var globeCenter: CGPoint { CGPoint(x: card.width * 0.6, y: card.height * 0.85) }
-
-    /// The map view, centred on the globe and covering the whole card (it overflows the card).
-    var mapFrame: CGRect {
-        let c = globeCenter
-        let a = max(c.x, card.width - c.x)
-        let b = max(c.y, card.height - c.y)
-        return CGRect(x: c.x - a, y: c.y - b, width: 2 * a, height: 2 * b)
+    /// The tray panel's rect: behind the button column, as tall as its rows plus a title.
+    func trayFrame(count: Int) -> CGRect {
+        let rows = CGFloat(count) * Self.buttonPitch
+        let height = rows + 46
+        let width: CGFloat = 196
+        return CGRect(x: size.width - width, y: size.height - height, width: width, height: height)
     }
 
-    /// The map's margins to the card's edges, so Apple's legal label stays inside the card.
-    var mapMargins: EdgeInsets {
-        let m = mapFrame
-        return EdgeInsets(
-            top: max(0, -m.minY), leading: max(0, -m.minX),
-            bottom: max(0, m.maxY - card.height), trailing: max(0, m.maxX - card.width))
-    }
-
-    /// The Jeep's dot: 8–10 pt with the card's height.
-    var dotSize: CGFloat { min(max(card.height * 0.03, 8), 10) }
-
-    /// The Apps tray's icons: 48 pt on a 360 pt window.
-    var trayIcon: CGFloat { type(48, floor: 36) }
+    /// The toast (a store message) sits low in the car's region.
+    var toastBottom: CGFloat { size.height - 14 }
 }
 
 /// The drawn battery capsule: how full, and when it turns red.
@@ -112,7 +97,6 @@ nonisolated enum BatteryGauge {
         (percent ?? 100) <= 20
     }
 }
-
 
 // MARK: - Colours
 
@@ -133,44 +117,30 @@ nonisolated struct DashboardTheme: Equatable, Sendable {
 
     /// Night #000, day a soft white #F5F5F7.
     var background: Color { dark ? .black : Color(hex: 0xF5F5F7) }
-    var card: Color { dark ? .black : .white }
-    /// The Jeep card's radial fill, from its top centre.
-    var jeepFill: [Gradient.Stop] {
-        dark
-            ? [.init(color: Color(hex: 0x202024), location: 0), .init(color: Color(hex: 0x0D0D0F), location: 0.6), .init(color: Color(hex: 0x08080A), location: 1)]
-            : [.init(color: .white, location: 0), .init(color: Color(hex: 0xF4F4F6), location: 0.6), .init(color: Color(hex: 0xEDEDF0), location: 1)]
-    }
     var text: Color { dark ? Color(hex: 0xF5F5F7) : Color(hex: 0x1C1C1E) }
     var secondary: Color { dark ? Color(hex: 0x8E8E93) : Color(hex: 0x6E6E73) }
-    var cardEdge: Color { dark ? Color.white.opacity(0.07) : Color.black.opacity(0.06) }
-    var tray: Color { dark ? Color(hex: 0x1E1E20, opacity: 0.94) : Color.white.opacity(0.94) }
+    var hairline: Color { dark ? Color.white.opacity(0.14) : Color.black.opacity(0.12) }
+    var handle: Color { dark ? Color.white.opacity(0.38) : Color.black.opacity(0.28) }
+    var tray: Color { dark ? Color(hex: 0x1C1C1E, opacity: 0.92) : Color.white.opacity(0.94) }
     var trayEdge: Color { dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06) }
-    var trayShadow: Color { dark ? Color.black.opacity(0.6) : Color.black.opacity(0.14) }
+    var trayShadow: Color { dark ? Color.black.opacity(0.55) : Color.black.opacity(0.14) }
+    var toast: Color { dark ? Color(hex: 0x2C2C2E, opacity: 0.94) : Color.white.opacity(0.96) }
 
     static let green = Color(hex: 0x30D158)
     static let amber = Color(hex: 0xFF9F0A)
     static let red = Color(hex: 0xFF453A)
-    static let navy = Color(hex: 0x0A1626)
-    static let deep = Color(hex: 0x03060B)
-
-    static func tint(_ t: CarPlayTint?) -> Color {
-        switch t {
-        case .green: green
-        case .amber: amber
-        case nil: .clear
-        }
-    }
 }
 
 // MARK: - View
 
-/// The CarPlay window: the Jeep card on the left (35%), the globe card on the right, and the
-/// Apps tray over the globe card's top-right corner while it's open. A picture: every control is
-/// a real template button drawn by CarPlay over it; drags reach the 3D Jeep through `spin`.
+/// The CarPlay window: the 3D Jeep full-screen (the page draws its call-outs and the roof strip),
+/// a status row top-left, the map sliding in from the right when Earth is on, the Apps tray's
+/// names behind the map buttons, Milan's Jeep while the page loads. A picture: every control is a
+/// real template button drawn by CarPlay over it; fingers reach the 3D Jeep through `gestures`.
 struct DashboardView: View {
     let model: CarPlayModel
     let jeepState: [String: Any]
-    /// The Jeep's last location (globe camera and dot).
+    /// The Jeep's last location (the map's centre and dot).
     var location: CLLocationCoordinate2D? = nil
     /// Battery %, for the capsule.
     var battery: Int? = nil
@@ -178,28 +148,36 @@ struct DashboardView: View {
     var charging: Bool = false
     /// CarPlay's appearance: night (true) or day.
     var dark: Bool = true
-    var spin: DashboardSpin? = nil
+    var gestures: JeepGestures? = nil
+    var motion: DashboardMotion? = nil
     var tray: AppTray? = nil
 
     private var theme: DashboardTheme { DashboardTheme(dark: dark) }
+    private var mapOpen: Bool { motion?.mapOpen ?? false }
+    private var dividerDx: CGFloat { motion?.dividerDx ?? 0 }
 
     var body: some View {
         GeometryReader { geo in
-            // Everything keeps CarPlay's safe area (clear of the dock and the top buttons).
+            // Everything keeps CarPlay's safe area (clear of the dock).
             let layout = DashboardLayout(size: geo.size)
             ZStack(alignment: .topLeading) {
                 if model.signedIn {
-                    ZStack(alignment: .topLeading) {
-                        jeepCard(layout)
-                            .frame(width: layout.jeepCard.width, height: layout.jeepCard.height)
-                            .offset(x: layout.jeepCard.minX, y: layout.jeepCard.minY)
-                        card(layout)
-                            .frame(width: layout.card.width, height: layout.card.height)
-                            .offset(x: layout.card.minX, y: layout.card.minY)
-                    }
-                    .transaction { $0.animation = nil }
+                    JeepEmbedView(state: Self.pageState(jeepState, layout: layout, mapOpen: mapOpen), gestures: gestures, motion: motion)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .accessibilityHidden(true)
+                        .onAppear { wire(layout) }
+                        .onChange(of: geo.size) { _, _ in wire(layout) }
+
+                    statusRow(layout)
+                        .offset(x: layout.statusOrigin.x, y: layout.statusOrigin.y)
+
+                    toast(layout)
+
+                    mapLayer(layout)
 
                     trayLayer(layout)
+
+                    loadingLayer(layout)
                 } else {
                     Text("Sign in on your iPhone.")
                         .font(.system(size: layout.type(17, floor: 15), weight: .medium))
@@ -213,221 +191,194 @@ struct DashboardView: View {
         .environment(\.colorScheme, dark ? .dark : .light)
     }
 
-    // MARK: Jeep card
+    /// The page's state with the car's region for this layout.
+    static func pageState(_ state: [String: Any], layout: DashboardLayout, mapOpen: Bool) -> [String: Any] {
+        var s = state
+        let r = layout.region(mapOpen: mapOpen)
+        s["region"] = ["x0": Int(r.minX.rounded()), "y0": Int(r.minY.rounded()), "x1": Int(r.maxX.rounded()), "y1": Int(r.maxY.rounded())]
+        return s
+    }
 
-    private func jeepCard(_ l: DashboardLayout) -> some View {
-        let shape = RoundedRectangle(cornerRadius: DashboardLayout.cardRadius, style: .continuous)
-        let w = l.jeepCard.width, h = l.jeepCard.height
-        let inner = max(0, w - 2 * DashboardLayout.pad)
-        return ZStack(alignment: .topLeading) {
-            RadialGradient(
-                stops: theme.jeepFill, center: .top, startRadius: 0, endRadius: max(w, h))
-                .frame(width: w, height: h)
-                .accessibilityHidden(true)
+    /// The gestures need the layout's numbers for a divider drag.
+    private func wire(_ layout: DashboardLayout) {
+        guard let gestures else { return }
+        gestures.dividerTravel = layout.dividerTravel
+        gestures.regionJSON = { dx in DashboardLayout.regionJSON(layout.region(mapOpen: true, dividerDx: dx)) }
+    }
 
-            JeepEmbedView(state: jeepState, spin: spin)
-                .frame(width: l.jeep.width, height: l.jeep.height)
-                .offset(x: l.jeep.minX, y: l.jeep.minY)
-                .accessibilityHidden(true)
+    // MARK: Status row
 
-            Text(model.name)
-                .font(.system(size: l.nameFont, weight: .medium))
-                .foregroundStyle(theme.secondary)
-                .lineLimit(1)
-                .frame(width: inner, height: l.nameLine, alignment: .leading)
-                .offset(x: DashboardLayout.pad, y: l.nameTop)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                hero(l)
-                Spacer(minLength: 0)
-                if l.showsBattery, let ev = model.evText {
-                    energy(l, ev)
+    /// `P R N D` (the one in use bright), the battery capsule and `78%`, then `186 mi`.
+    private func statusRow(_ l: DashboardLayout) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            HStack(spacing: 5) {
+                ForEach(CarPlayModel.gearLetters, id: \.self) { letter in
+                    Text(letter)
+                        .font(.system(size: l.statusFont, weight: .semibold))
+                        .foregroundStyle(letter == model.gear ? theme.text : theme.secondary.opacity(0.5))
                 }
             }
-            .frame(width: inner, height: l.heroLine, alignment: .leading)
-            .offset(x: DashboardLayout.pad, y: l.heroTop)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(model.gear == "D" ? "Drive" : "Parked")
 
-            statusLine(l)
-                .frame(width: inner, height: l.statusLineHeight, alignment: .leading)
-                .offset(x: DashboardLayout.pad, y: l.statusBottom - l.statusLineHeight)
-        }
-        .frame(width: w, height: h, alignment: .topLeading)
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(theme.cardEdge, lineWidth: 1))
-    }
+            if let ev = model.evText {
+                HStack(spacing: 6) {
+                    BatteryCapsule(percent: battery, edge: theme.secondary.opacity(0.5))
+                        .accessibilityHidden(true)
+                    Text(ev)
+                        .font(.system(size: l.statusFont, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(theme.text)
+                    if charging {
+                        BreathingBolt()
+                            .accessibilityLabel("Charging")
+                    }
+                }
+            }
 
-    /// The range as the hero number, " mi" on its baseline.
-    private func hero(_ l: DashboardLayout) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(model.rangeText)
-                .font(.system(size: l.heroFont, weight: .semibold))
-                .tracking(-0.6)
-                .monospacedDigit()
-                .foregroundStyle(theme.text)
-            Text(" mi")
-                .font(.system(size: l.unitFont, weight: .medium))
-                .foregroundStyle(theme.secondary)
-        }
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
-    }
-
-    /// A drawn battery capsule, the EV %, and a breathing bolt while charging.
-    private func energy(_ l: DashboardLayout, _ ev: String) -> some View {
-        HStack(alignment: .center, spacing: 6) {
-            BatteryCapsule(percent: battery, edge: theme.secondary.opacity(0.45))
-                .accessibilityHidden(true)
-            Text(ev)
-                .font(.system(size: l.energyFont, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(theme.secondary)
-            if charging {
-                BreathingBolt()
-                    .accessibilityLabel("Charging")
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(model.rangeText)
+                    .font(.system(size: l.statusFont, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(theme.text)
+                Text("mi")
+                    .font(.system(size: l.statusFont * 0.92, weight: .medium))
+                    .foregroundStyle(theme.secondary)
             }
         }
         .lineLimit(1)
         .fixedSize()
     }
 
-    /// Icons only: the lock (green locked, amber unlocked or something open) and Milan's Jeep's
-    /// top-view icon for the roof. A store message replaces them while shown (4 s).
-    private func statusLine(_ l: DashboardLayout) -> some View {
-        Group {
+    // MARK: Toast
+
+    /// A store message ("Jeep didn't answer. Try again.") in a pill at the bottom, while it lasts.
+    private func toast(_ l: DashboardLayout) -> some View {
+        ZStack(alignment: .bottom) {
             if let message = model.message {
                 Text(message)
-                    .font(.system(size: l.statusFont, weight: .medium))
+                    .font(.system(size: l.type(13, floor: 11), weight: .medium))
                     .foregroundStyle(theme.text)
-                    .minimumScaleFactor(0.8)
                     .lineLimit(1)
-            } else {
-                HStack(spacing: 14) {
-                    if let symbol = model.statusSymbol {
-                        Group {
-                            if symbol.hasPrefix("jeep-") {
-                                // the Jeep's own icons: the top view as tall as the roof icon,
-                                // the side views shorter (they're wide)
-                                Image(symbol)
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: symbol == "jeep-door-open" ? l.statusFont * 2 : l.statusFont * 1.15)
-                            } else {
-                                Image(systemName: symbol)
-                                    .font(.system(size: l.statusFont * 1.25, weight: .semibold))
-                            }
-                        }
-                        .foregroundStyle(DashboardTheme.tint(model.statusTint))
-                        .accessibilityLabel(model.statusWord ?? "")
-                    }
-                    Image(CarPlayTemplates.roofAsset(model.roofKey))
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: l.statusFont * 2)
-                        .foregroundStyle(theme.text)
-                        .accessibilityLabel(model.roofWord)
-                }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(theme.toast, in: Capsule())
+                    .overlay(Capsule().strokeBorder(theme.trayEdge, lineWidth: 1))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .frame(width: l.region(mapOpen: mapOpen).width, height: l.toastBottom, alignment: .bottom)
+        .animation(.easeOut(duration: 0.25), value: model.message)
+        .allowsHitTesting(false)
     }
 
-    // MARK: Right card
+    // MARK: Map
 
-    private func card(_ l: DashboardLayout) -> some View {
-        let shape = RoundedRectangle(cornerRadius: DashboardLayout.cardRadius, style: .continuous)
-        let map = l.mapFrame
-        let glow = max(l.card.width, l.card.height) * 0.9
-        return ZStack(alignment: .topLeading) {
-            GlobeView(
-                coordinate: location, globeRadius: l.globeDiameter / 2,
-                margins: l.mapMargins, dotSize: l.dotSize, dark: dark)
-                .frame(width: map.width, height: map.height)
-                .offset(x: map.minX, y: map.minY)
-                .accessibilityHidden(true)
-
-            Group {
-                if dark {
-                    // Night: a faint navy glow rising from under the globe.
-                    RadialGradient(
-                        stops: [
-                            .init(color: DashboardTheme.navy, location: 0),
-                            .init(color: DashboardTheme.deep, location: 0.55),
-                            .init(color: .black, location: 1),
-                        ],
-                        center: UnitPoint(x: 0.62, y: 0.85), startRadius: 0, endRadius: glow)
-                        .blendMode(.screen)
-                } else {
-                    // Day: only a very soft light grey behind the globe.
-                    RadialGradient(
-                        stops: [
-                            .init(color: Color(hex: 0xE6E6EB), location: 0),
-                            .init(color: Color(hex: 0xF3F3F6), location: 0.5),
-                            .init(color: .white, location: 1),
-                        ],
-                        center: UnitPoint(x: 0.6, y: 0.85), startRadius: 0, endRadius: glow)
-                        .blendMode(.multiply)
-                }
-            }
-            .frame(width: l.card.width, height: l.card.height)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+    /// Apple Maps' own look, sliding in from the right edge; a hairline and a pill handle mark the
+    /// divider. A finger drag moves it without animation; open and close slide.
+    private func mapLayer(_ l: DashboardLayout) -> some View {
+        let frame = l.mapFrame(open: mapOpen, dividerDx: dividerDx)
+        return ZStack(alignment: .leading) {
+            JeepMapView(coordinate: location, dark: dark)
+                .frame(width: frame.width, height: frame.height)
+            Rectangle()
+                .fill(theme.hairline)
+                .frame(width: 1, height: frame.height)
+            Capsule()
+                .fill(theme.handle)
+                .frame(width: 4, height: 44)
+                .offset(x: 6)
         }
-        .frame(width: l.card.width, height: l.card.height, alignment: .topLeading)
-        .background(theme.card)
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(theme.cardEdge, lineWidth: 1))
+        .frame(width: frame.width, height: frame.height, alignment: .leading)
+        .offset(x: frame.minX)
+        .animation(dividerDx == 0 ? DashboardLayout.slide : nil, value: mapOpen)
+        // a finger moves it as is; letting go glides it back (the page glides the car the same way)
+        .animation(dividerDx == 0 ? DashboardLayout.slide : nil, value: dividerDx)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 
     // MARK: Apps tray
 
-    /// The tray grows out of the Apps button's corner (top-right): in 200 ms ease-out, out 150 ms.
+    /// A glass panel rising from the corner behind the map buttons (which are the four favourite
+    /// apps while it's open), their names on the buttons' rows.
     private func trayLayer(_ l: DashboardLayout) -> some View {
         let open = tray?.isOpen ?? false
-        return ZStack(alignment: .topTrailing) {
+        let apps = CarPlayModel.favouriteApps
+        let frame = l.trayFrame(count: apps.count)
+        let centres = l.buttonCentres(count: apps.count)
+        return ZStack(alignment: .topLeading) {
             if open {
-                trayCard(l)
-                    .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
-            }
-        }
-        .frame(width: l.card.width - 2 * DashboardLayout.cardInset, alignment: .topTrailing)
-        .offset(x: l.card.minX + DashboardLayout.cardInset, y: l.card.minY + DashboardLayout.cardInset)
-        .animation(open ? .easeOut(duration: 0.2) : .easeIn(duration: 0.15), value: open)
-        .allowsHitTesting(false)
-    }
-
-    private func trayCard(_ l: DashboardLayout) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
-        let side = l.trayIcon
-        return VStack(alignment: .leading, spacing: 12) {
-            Text("Apps")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme.secondary)
-                .padding(.leading, 4)
-            HStack(alignment: .top, spacing: 8) {
-                ForEach(CarPlayModel.favouriteApps, id: \.title) { app in
-                    VStack(spacing: 6) {
-                        Image(uiImage: AppIconArt.image(app, side: side, circle: false, dark: dark))
-                            .resizable()
-                            .frame(width: side, height: side)
+                ZStack(alignment: .topLeading) {
+                    UnevenRoundedRectangle(topLeadingRadius: 24, style: .continuous)
+                        .fill(theme.tray)
+                        .overlay(UnevenRoundedRectangle(topLeadingRadius: 24, style: .continuous).strokeBorder(theme.trayEdge, lineWidth: 1))
+                        .shadow(color: theme.trayShadow, radius: 22, y: 8)
+                    Text("Apps")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.secondary)
+                        .offset(x: 18, y: 14)
+                    ForEach(Array(apps.enumerated()), id: \.element.title) { i, app in
                         Text(app.title)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(theme.text)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                            .frame(width: frame.width - DashboardLayout.buttonColumn - 18, height: DashboardLayout.buttonPitch, alignment: .trailing)
+                            .offset(x: 18, y: centres[i] - frame.minY - DashboardLayout.buttonPitch / 2)
                     }
-                    .frame(width: side + 18)
                 }
+                .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .padding(EdgeInsets(top: 14, leading: 12, bottom: 12, trailing: 12))
-        .background(theme.tray, in: shape)
-        .overlay(shape.strokeBorder(theme.trayEdge, lineWidth: 1))
-        .shadow(color: theme.trayShadow, radius: dark ? 25 : 16, y: dark ? 20 : 8)
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        .offset(x: frame.minX, y: frame.minY)
+        .animation(open ? .timingCurve(0.22, 1, 0.36, 1, duration: 0.42) : .easeIn(duration: 0.18), value: open)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    // MARK: Loading
+
+    /// Milan's Jeep until the page has painted its own (the same picture, same place), so there's
+    /// never a blank window; the page then takes over, turns the wheels and fades into the 3D Jeep.
+    private func loadingLayer(_ l: DashboardLayout) -> some View {
+        let blank = (motion?.page ?? .blank) == .blank
+        return ZStack {
+            if blank {
+                LoadingJeep(width: DashboardLayout.loaderWidth, progress: 0, tint: theme.text, line: theme.text.opacity(0.14))
+            }
+        }
+        .frame(width: l.size.width, height: l.size.height)
+        .allowsHitTesting(false)
+        .accessibilityLabel("Loading")
     }
 }
 
+/// Milan's Jeep (his drawing), a thin progress line under it: the still version the app shows
+/// before the page's own, animated one is up.
+struct LoadingJeep: View {
+    let width: CGFloat
+    let progress: Double
+    let tint: Color
+    let line: Color
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image("jeep-logo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: width)
+                .foregroundStyle(tint)
+            ZStack(alignment: .leading) {
+                Rectangle().fill(line).frame(height: 1)
+                Rectangle().fill(tint).frame(width: width * 0.6 * progress, height: 2).offset(y: -0.5)
+            }
+            .frame(width: width * 0.6, height: 2)
+        }
+    }
+}
 
 // MARK: - Battery and bolt
 

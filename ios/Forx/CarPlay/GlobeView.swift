@@ -3,73 +3,41 @@ import MapKit
 import SwiftUI
 import UIKit
 
-// MARK: - Fit (pure, tested)
+// MARK: - Camera (pure, tested)
 
-/// Camera maths for a pitch-0 view of the Earth as a sphere.
-nonisolated enum GlobeFit {
-    static let earthRadius: Double = 6_371_000
-    /// How far south of the Jeep the camera looks, so the dot sits above the globe's centre (as in the mockup).
-    static let southOffset: Double = 15
-    /// The angle of the point measured to learn the view's focal length.
-    static let probeAngle: Double = 30 * .pi / 180
+/// Where the map looks when Earth opens: over the Jeep, from a neighbourhood's height.
+nonisolated enum JeepMapCamera {
+    /// Metres above the ground.
+    static let distance: CLLocationDistance = 2_400
 
-    /// The camera's centre for a Jeep at `jeep`: 15° south of it (not past −80°).
-    static func cameraCenter(for jeep: CLLocationCoordinate2D?) -> CLLocationCoordinate2D {
-        guard let jeep else { return CLLocationCoordinate2D(latitude: 0, longitude: 0) }
-        return CLLocationCoordinate2D(latitude: max(-80, jeep.latitude - southOffset), longitude: jeep.longitude)
-    }
-
-    /// The probe point: `probeAngle` north of `center` (south when that would pass the pole).
-    static func probe(from center: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
-        let deg = probeAngle * 180 / .pi
-        let lat = center.latitude + deg <= 89 ? center.latitude + deg : center.latitude - deg
-        return CLLocationCoordinate2D(latitude: lat, longitude: center.longitude)
-    }
-
-    /// The camera distance (above the surface) that draws the globe with screen radius `radius`,
-    /// given that at distance `current` the probe point showed `measured` points from the centre.
-    /// Nil if the measurement can't be used.
-    static func distance(measured: Double, at current: Double, radius: Double) -> Double? {
-        let r = earthRadius
-        guard measured.isFinite, measured > 1, current > 0, radius > 1 else { return nil }
-        // Pinhole: offset = f · R sinθ / (d + R − R cosθ), so the focal length in points is:
-        let f = measured * (current + r - r * cos(probeAngle)) / (r * sin(probeAngle))
-        // The limb shows at f · tanα with sinα = R / (d + R): solve for d.
-        let centreDistance = r * (1 + (f / radius) * (f / radius)).squareRoot()
-        let d = centreDistance - r
-        guard d.isFinite else { return nil }
-        return min(max(d, 2_000_000), 60_000_000)
+    /// The map's centre: the Jeep, or nowhere in particular (0, 0, far out) without a fix.
+    static func center(for jeep: CLLocationCoordinate2D?) -> (CLLocationCoordinate2D, CLLocationDistance) {
+        guard let jeep, CLLocationCoordinate2DIsValid(jeep) else {
+            return (CLLocationCoordinate2D(latitude: 20, longitude: 0), 20_000_000)
+        }
+        return (jeep, distance)
     }
 }
 
 // MARK: - View
 
-/// The whole Earth seen from far out: at night a satellite globe on black (imagery only: no
-/// labels or borders); by day Apple Maps' muted day map, blue oceans and land. Seen
-/// from far out over the Jeep's last location, with one small blue dot on the Jeep. Picture
-/// only: no touches, no compass or scale. Apple's legal label stays (MapKit requires it); the
-/// view can be larger than what shows, so `margins` keep the label on the visible part.
-struct GlobeView: UIViewRepresentable {
-    /// The first camera distance, before the fit.
-    static let distance: CLLocationDistance = 22_000_000
-
-    /// The Jeep's location; nil → the camera looks at 0,0 and there's no dot.
+/// Apple Maps' own look (the standard map, its realistic elevation, night or day with CarPlay),
+/// centred on the Jeep's last location with a small blue dot on it. Picture only: no touches, no
+/// compass or scale. Apple's legal label stays (MapKit requires it).
+struct JeepMapView: UIViewRepresentable {
+    /// The Jeep's location; nil → far out over the Atlantic and no dot.
     let coordinate: CLLocationCoordinate2D?
-    /// The globe's radius on screen, in points.
-    var globeRadius: CGFloat = 0
-    var margins: EdgeInsets = EdgeInsets()
-    var dotSize: CGFloat = 9
-    /// CarPlay's appearance: night (satellite) or day (muted standard map).
+    var dotSize: CGFloat = 10
+    /// CarPlay's appearance: night or day.
     var dark: Bool = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    func makeUIView(context: Context) -> GlobeMapView {
-        let map = GlobeMapView(frame: .zero)
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView(frame: .zero)
         map.insetsLayoutMarginsFromSafeArea = false
-
         map.isUserInteractionEnabled = false
         map.isZoomEnabled = false
         map.isScrollEnabled = false
@@ -78,22 +46,17 @@ struct GlobeView: UIViewRepresentable {
         map.showsCompass = false
         map.showsScale = false
         map.showsUserLocation = false
-
         map.delegate = context.coordinator
         updateUIView(map, context: context)
         return map
     }
 
-    func updateUIView(_ map: GlobeMapView, context: Context) {
-        let insets = UIEdgeInsets(
-            top: margins.top, left: margins.leading, bottom: margins.bottom, right: margins.trailing)
-        if map.layoutMargins != insets { map.layoutMargins = insets }
-        map.globeRadius = globeRadius
+    func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.style(dark: dark, on: map)
         context.coordinator.show(coordinate, dotSize: dotSize, on: map)
     }
 
-    static func dismantleUIView(_ map: GlobeMapView, coordinator: Coordinator) {
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
         map.delegate = nil
     }
 
@@ -101,31 +64,22 @@ struct GlobeView: UIViewRepresentable {
         private var dot: MKPointAnnotation? = nil
         private var shownKey: [Double]? = nil
         private var shownOnce = false
-        private var dotSize: CGFloat = 9
+        private var dotSize: CGFloat = 10
         private var shownDark: Bool? = nil
 
-        /// Night: satellite imagery on black. Day: the muted standard map in its light style.
-        /// Only when it changed; the camera is fitted again after.
-        func style(dark: Bool, on map: GlobeMapView) {
+        /// Only when it changed.
+        func style(dark: Bool, on map: MKMapView) {
             guard dark != shownDark else { return }
             shownDark = dark
-            if dark {
-                map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
-                map.overrideUserInterfaceStyle = .dark
-                map.backgroundColor = .black
-            } else {
-                let config = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .muted)
-                config.pointOfInterestFilter = .excludingAll
-                config.showsTraffic = false
-                map.preferredConfiguration = config
-                map.overrideUserInterfaceStyle = .light
-                map.backgroundColor = .white
-            }
-            map.refit()
+            let config = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
+            config.showsTraffic = false
+            map.preferredConfiguration = config
+            map.overrideUserInterfaceStyle = dark ? .dark : .light
+            map.backgroundColor = dark ? .black : UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
         }
 
         /// Points the camera and moves the dot, only when something changed. No animation.
-        func show(_ coordinate: CLLocationCoordinate2D?, dotSize: CGFloat, on map: GlobeMapView) {
+        func show(_ coordinate: CLLocationCoordinate2D?, dotSize: CGFloat, on map: MKMapView) {
             if dotSize != self.dotSize {
                 self.dotSize = dotSize
                 if let dot, let view = map.view(for: dot) as? JeepDotView { view.setSize(dotSize) }
@@ -137,7 +91,8 @@ struct GlobeView: UIViewRepresentable {
             shownOnce = true
             shownKey = key
 
-            map.globeCenter = GlobeFit.cameraCenter(for: valid)
+            let (center, distance) = JeepMapCamera.center(for: valid)
+            map.setCamera(MKMapCamera(lookingAtCenter: center, fromDistance: distance, pitch: 0, heading: 0), animated: false)
 
             if let valid {
                 if let dot {
@@ -165,51 +120,7 @@ struct GlobeView: UIViewRepresentable {
     }
 }
 
-/// An `MKMapView` that frames the globe itself: whenever its size, centre or wanted radius
-/// changes it sets the camera, measures how big the Earth came out and corrects the distance
-/// once. (A camera set before the first layout would otherwise be lost.)
-final class GlobeMapView: MKMapView {
-    var globeCenter: CLLocationCoordinate2D? {
-        didSet { needsFit = true; setNeedsLayout() }
-    }
-
-    var globeRadius: CGFloat = 0 {
-        didSet { if globeRadius != oldValue { needsFit = true; setNeedsLayout() } }
-    }
-
-    private var needsFit = true
-    private var fittedSize: CGSize = .zero
-
-    /// Sets the camera again on the next layout (after a change of map configuration).
-    func refit() {
-        needsFit = true
-        setNeedsLayout()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        if bounds.size != fittedSize { needsFit = true }
-        guard needsFit, let center = globeCenter, bounds.width > 0, bounds.height > 0 else { return }
-        needsFit = false
-        fittedSize = bounds.size
-
-        setCamera(makeCamera(center, GlobeView.distance), animated: false)
-        guard globeRadius > 0 else { return }
-        let current = camera.centerCoordinateDistance
-        let p0 = convert(center, toPointTo: self)
-        let p1 = convert(GlobeFit.probe(from: center), toPointTo: self)
-        let measured = Double(hypot(p1.x - p0.x, p1.y - p0.y))
-        if let d = GlobeFit.distance(measured: measured, at: current, radius: Double(globeRadius)) {
-            setCamera(makeCamera(center, d), animated: false)
-        }
-    }
-
-    private func makeCamera(_ center: CLLocationCoordinate2D, _ distance: CLLocationDistance) -> MKMapCamera {
-        MKMapCamera(lookingAtCenter: center, fromDistance: distance, pitch: 0, heading: 0)
-    }
-}
-
-/// The Jeep on the globe: a small blue dot (#0A84FF) in a white ring.
+/// The Jeep on the map: a small blue dot (#0A84FF) in a white ring.
 final class JeepDotView: MKAnnotationView {
     static let reuseID = "jeep"
 
@@ -237,7 +148,7 @@ final class JeepDotView: MKAnnotationView {
         layer.shadowOffset = .zero
         inner.backgroundColor = UIColor(red: 10 / 255, green: 132 / 255, blue: 1, alpha: 1).cgColor
         layer.addSublayer(inner)
-        setSize(9)
+        setSize(10)
     }
 
     /// Diameter in points; the white ring is about a fifth of it.

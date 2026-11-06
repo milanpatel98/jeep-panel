@@ -5,7 +5,7 @@ import SwiftUI
 import UIKit
 
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
-    /// Rebuild this often, so the Climate map button turns off when its 15 minutes run out
+    /// Rebuild this often, so "38 minutes ago" and the Climate row stay true between changes
     /// (`dashboard` also updates the template buttons; nothing else re-reads the clock).
     static let tickInterval: Duration = .seconds(30)
 
@@ -15,8 +15,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private var window: CPWindow?
     private var host: UIHostingController<DashboardView>?
     private var templates: CarPlayTemplates?
-    /// Drags on the map → the 3D Jeep. One per connect.
-    private var spin: DashboardSpin?
+    /// Fingers on the map → the 3D Jeep and the dashboard. One per connect.
+    private var gestures: JeepGestures?
+    private var motion: DashboardMotion?
     private var connected = false
     private var ticker: Task<Void, Never>? = nil
     private var motionObserver: (any NSObjectProtocol)? = nil
@@ -33,16 +34,18 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
         // Built once per connect: sets the map template as root; updates go in place.
         let scene = templateApplicationScene
-        let spin = DashboardSpin()
-        self.spin = spin
+        let motion = DashboardMotion()
+        let gestures = JeepGestures(motion: motion)
+        self.motion = motion
+        self.gestures = gestures
         templates = CarPlayTemplates(
             interface: interfaceController,
             open: { [weak scene] url in scene?.open(url, options: nil, completionHandler: nil) },
             perform: { cmd in Task { await AppModel.store.perform(cmd, fromCarPlay: true) } },
-            spin: spin)
+            gestures: gestures)
 
         let dark = Self.isDark(window)
-        let host = UIHostingController(rootView: Self.dashboard(dark: dark, spin: spin))
+        let host = UIHostingController(rootView: Self.dashboard(dark: dark, gestures: gestures, motion: motion))
         host.view.backgroundColor = dark ? .black : UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
         window.rootViewController = host
         self.host = host
@@ -74,22 +77,25 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         window.rootViewController = nil  // frees the 3D Jeep's WebGL context now
         host = nil
         templates = nil
-        spin = nil
+        gestures = nil
+        motion = nil
         self.interfaceController = nil
         self.window = nil
     }
 
     // MARK: Store → window
 
-    /// Builds the dashboard under observation (store and roof). The first change re-runs this on
-    /// the next main-actor turn, so a burst of changes becomes one rebuild.
+    /// Builds the dashboard under observation (store, roof, the tray and the dashboard's own
+    /// motion). The first change re-runs this on the next main-actor turn, so a burst of changes
+    /// becomes one rebuild.
     private func observe() {
         guard connected else { return }
         let dark = Self.isDark(window)
-        let spin = self.spin
+        let gestures = self.gestures
+        let motion = self.motion
         let templates = self.templates
         let view = withObservationTracking {
-            Self.dashboard(templates: templates, dark: dark, spin: spin)
+            Self.dashboard(templates: templates, dark: dark, gestures: gestures, motion: motion)
         } onChange: { [weak self] in
             let delegate = self
             Task { @MainActor in delegate?.observe() }
@@ -103,7 +109,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         guard connected else { return }
         let dark = Self.isDark(window)
         paint(dark)
-        host?.rootView = Self.dashboard(templates: templates, dark: dark, spin: spin)
+        host?.rootView = Self.dashboard(templates: templates, dark: dark, gestures: gestures, motion: motion)
     }
 
     private func paint(_ dark: Bool) {
@@ -128,7 +134,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     /// The dashboard for the store's state now; also updates the CarPlay buttons in place.
     private static func dashboard(
-        templates: CarPlayTemplates? = nil, dark: Bool = true, spin: DashboardSpin? = nil, now: Date = Date()
+        templates: CarPlayTemplates? = nil, dark: Bool = true, gestures: JeepGestures? = nil,
+        motion: DashboardMotion? = nil, now: Date = Date()
     ) -> DashboardView {
         let store = AppModel.store
         let roof = AppModel.roof
@@ -138,18 +145,22 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let signedIn = demo != nil || !store.needsSignIn
         let snapshot = demo ?? store.snapshot ?? (signedIn ? store.lastKnownSnapshot : nil)
         let climateOn = store.climateOnUntil.map { now < $0 } ?? false
+        // read here, under observation: the buttons and the page follow the map and the view
+        let mapOpen = motion?.mapOpen ?? false
+        let mode = motion?.mode ?? .hero
         let model = CarPlayModel.make(
             snapshot: snapshot, pending: store.pending, climateOn: climateOn, message: store.message,
-            signedIn: signedIn, roof: roof, now: now)
+            signedIn: signedIn, roof: roof, mode: mode, mapOpen: mapOpen, now: now)
         templates?.update(model, dark: dark)
         let state = JeepEmbedState.make(
-            snapshot: snapshot, roof: roof, reducedMotion: UIAccessibility.isReduceMotionEnabled, dark: dark)
+            snapshot: snapshot, roof: roof, reducedMotion: UIAccessibility.isReduceMotionEnabled, dark: dark,
+            mode: mode, charge: model.chargeText, tires: model.tires, tiresAgo: model.tiresAgo)
         var location: CLLocationCoordinate2D? = nil
         if let lat = snapshot?.latitude, let lng = snapshot?.longitude {
             location = CLLocationCoordinate2D(latitude: lat, longitude: lng)
         }
         return DashboardView(
             model: model, jeepState: state, location: location, battery: snapshot?.evPercent,
-            charging: snapshot?.charging == true, dark: dark, spin: spin, tray: templates?.tray)
+            charging: snapshot?.charging == true, dark: dark, gestures: gestures, motion: motion, tray: templates?.tray)
     }
 }

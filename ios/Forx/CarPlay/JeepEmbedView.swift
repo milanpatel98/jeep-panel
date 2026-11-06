@@ -8,9 +8,14 @@ import WebKit
 /// The state for `window.jeepEmbed.apply(state)` (src/embed.js, src/embedState.js).
 nonisolated enum JeepEmbedState {
     /// Doors map like the phone patch: driver = FL, passenger = FR, rear left = BL, rear right = BR.
-    /// Lights are always off here (the headlight flash is momentary). `locked` only when known.
-    /// Roof "doorsOff" is the top off with the doors off too. `dark` picks the page's night or day studio.
-    static func make(snapshot s: JeepSnapshot?, roof: String, reducedMotion: Bool, dark: Bool = true) -> [String: Any] {
+    /// Lights are always off here (the headlight flash is momentary). `locked` is true, false or
+    /// null (unknown: no lock above the roof). Roof "doorsOff" is the top off with the doors off
+    /// too. `dark` picks the page's night or day studio. `mode` is the view, `charge` the charge
+    /// port's call-out, `tires` the four pressures with their age.
+    static func make(
+        snapshot s: JeepSnapshot?, roof: String, reducedMotion: Bool, dark: Bool = true,
+        mode: JeepMode = .hero, charge: String? = nil, tires: [String: String] = [:], tiresAgo: String = ""
+    ) -> [String: Any] {
         let open = Set(s?.doorsOpen ?? [])
         let doors: [String: Bool] = [
             "FL": open.contains("driver"),
@@ -18,6 +23,8 @@ nonisolated enum JeepEmbedState {
             "BL": open.contains("leftRear"),
             "BR": open.contains("rightRear"),
         ]
+        var tireMap: [String: Any] = tires
+        tireMap["ago"] = tiresAgo
         var state: [String: Any] = [
             "lights": false,
             "roof": roof == "doorsOff" ? "off" : roof,
@@ -26,8 +33,11 @@ nonisolated enum JeepEmbedState {
             "doors": doors,
             "gate": s?.tailgateOpen == true,
             "reducedMotion": reducedMotion,
+            "mode": mode.rawValue,
+            "locked": s?.locked.map { $0 as Any } ?? NSNull(),
+            "charge": charge.map { $0 as Any } ?? NSNull(),
+            "tires": tireMap,
         ]
-        if let locked = s?.locked { state["locked"] = locked }
         return state
     }
 
@@ -38,18 +48,31 @@ nonisolated enum JeepEmbedState {
         else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    /// What the page says it's doing: its loading screen is painted (`loader`), the model's
+    /// progress, or the Jeep is on screen (`ready`). Anything else is nil.
+    static func page(_ body: Any) -> DashboardMotion.Page? {
+        guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
+        switch type {
+        case "loader": return .loading(0)
+        case "progress": return .loading(min(1, max(0, (dict["value"] as? Double) ?? 0)))
+        case "ready": return .ready
+        default: return nil
+        }
+    }
 }
 
 // MARK: - View
 
-/// The 3D black Jeep on its mirror floor (`forx://app/embed.html`), transparent over the panel.
-/// The view takes no touches: CarPlay's pan callbacks reach the page through `spin` (turn the
-/// Jeep). The page opens from above and makes its one turn to the 3/4 view.
+/// The 3D black Jeep on its mirror floor (`forx://app/embed.html`), transparent over the window,
+/// full-screen. The view takes no touches: CarPlay's gestures reach the page through `gestures`.
+/// The page's loading screen and its `ready` are reported to `motion`.
 struct JeepEmbedView: UIViewRepresentable {
     static let url = URL(string: "forx://app/embed.html")!
 
     let state: [String: Any]
-    var spin: DashboardSpin? = nil
+    var gestures: JeepGestures? = nil
+    var motion: DashboardMotion? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -78,14 +101,16 @@ struct JeepEmbedView: UIViewRepresentable {
 
         webView.navigationDelegate = coordinator
         coordinator.webView = webView
-        coordinator.attach(spin)
+        coordinator.motion = motion
+        coordinator.attach(gestures)
         coordinator.update(state)
         webView.load(URLRequest(url: Self.url))
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.attach(spin)
+        context.coordinator.motion = motion
+        context.coordinator.attach(gestures)
         context.coordinator.update(state)
     }
 
@@ -97,6 +122,7 @@ struct JeepEmbedView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var webView: WKWebView?
+        weak var motion: DashboardMotion?
 
         private var state: [String: Any] = [:]
         /// The page posted `ready`. Reset on every new load.
@@ -115,14 +141,14 @@ struct JeepEmbedView: UIViewRepresentable {
             ready = false
         }
 
-        /// Drags from CarPlay come in as page calls (`spin(4.2)`, `release()`).
-        func attach(_ spin: DashboardSpin?) {
-            guard let spin, spin !== attached else { return }
-            attached = spin
-            spin.send = { [weak self] call in self?.call(call) }
+        /// Gestures from CarPlay come in as page calls (`spin(4.2)`, `strip(-12, 1)`, …).
+        func attach(_ gestures: JeepGestures?) {
+            guard let gestures, gestures !== attached else { return }
+            attached = gestures
+            gestures.send = { [weak self] call in self?.call(call) }
         }
 
-        private weak var attached: DashboardSpin?
+        private weak var attached: JeepGestures?
 
         private func call(_ js: String) {
             guard ready, !stopped, let webView else { return }
@@ -141,7 +167,12 @@ struct JeepEmbedView: UIViewRepresentable {
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard !stopped, message.name == PanelWebView.handlerName, message.frameInfo.isMainFrame,
-                  panelMessage(message.body) == .ready else { return }  // progress, errors: ignored
+                  let page = JeepEmbedState.page(message.body) else { return }  // errors: ignored
+            if let motion, motion.page != page {
+                // `ready` sticks; progress never moves the dashboard backwards from ready
+                if case .ready = motion.page { } else { motion.page = page }
+            }
+            guard case .ready = page else { return }
             ready = true
             pushed = nil
             push()
@@ -152,11 +183,13 @@ struct JeepEmbedView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             ready = false  // a (re)load: wait for the new page's `ready`
             pushed = nil
+            motion?.page = .blank
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             ready = false
             pushed = nil
+            motion?.page = .blank
             guard !stopped else { return }
             webView.load(URLRequest(url: JeepEmbedView.url))
         }
