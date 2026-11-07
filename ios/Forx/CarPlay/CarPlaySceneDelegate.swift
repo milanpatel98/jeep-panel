@@ -63,7 +63,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             if let mode = CarPlayDebug.demoMode { motion.mode = mode }
             if CarPlayDebug.demoMap { templates?.setMap(open: true) }
             if CarPlayDebug.demoTray { templates?.toggleTray() }
-            CarPlayDebug.runDemoDrag(gestures)
+            CarPlayDebug.runDemoDrag(gestures, motion: motion)
         }
         #endif
         motionObserver = NotificationCenter.default.addObserver(

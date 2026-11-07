@@ -57,17 +57,22 @@ enum CarPlayDebug {
     }
     /// `phone`: the phone app shows the CarPlay screen itself (`CarPlayPreview`), for screenshots.
     static var demoPhone: Bool { demoWords.contains("phone") }
-    /// `drag=-50`: a finger pulls the roof strip's handle this far (pt, down positive) a few
-    /// seconds after launch and holds it there, for a screenshot of the handle mid-drag.
+    /// `pull=60` / `push=60`: a finger pulls the roof strip's handle up or pushes it down this
+    /// far (pt) once the page is up, and holds it there, for a screenshot of the handle mid-drag.
     static var demoDrag: Double? {
-        demoWords.first { $0.hasPrefix("drag=") }.flatMap { Double($0.dropFirst(5)) }
+        for word in demoWords {
+            if word.hasPrefix("pull="), let n = Double(word.dropFirst(5)) { return -n }
+            if word.hasPrefix("push="), let n = Double(word.dropFirst(5)) { return n }
+        }
+        return nil
     }
 
-    /// Runs the `drag=` demo on `gestures` once the page has had time to come up.
-    static func runDemoDrag(_ gestures: JeepGestures?) {
-        guard let dy = demoDrag, let gestures else { return }
+    /// Runs the `pull=` / `push=` demo on `gestures` 1.5 s after the page is ready.
+    static func runDemoDrag(_ gestures: JeepGestures?, motion: DashboardMotion?) {
+        guard let dy = demoDrag, let gestures, let motion else { return }
         Task {
-            try? await Task.sleep(for: .seconds(7))
+            while motion.page != .ready { try? await Task.sleep(for: .milliseconds(200)) }
+            try? await Task.sleep(for: .milliseconds(1500))
             gestures.began()
             gestures.changed(CGPoint(x: 0, y: dy < 0 ? -12 : 12))
             gestures.changed(CGPoint(x: 0, y: dy))
