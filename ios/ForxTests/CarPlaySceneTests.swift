@@ -225,6 +225,7 @@ struct CarPlaySceneTests {
     }
 
     @Test func appsButtonOpensTheGrid() throws {
+        if #available(iOS 27.0, *) { return }  // iOS 27: the Apps box (a map panel) instead
         let fake = FakeCarPlayInterface()
         let t = make(fake, Recorder())
         t.update(model(snap()))
@@ -234,6 +235,16 @@ struct CarPlaySceneTests {
         t.tap(.apps)  // no second push
         #expect(fake.pushed.count == 1)
         #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)
+    }
+
+    @Test func appsButtonTogglesTheBox() {
+        guard #available(iOS 27.0, *) else { return }
+        let t = make(FakeCarPlayInterface(), Recorder())
+        t.update(model(snap()))
+        t.tap(.apps)
+        #expect(t.appsBoxOpen)
+        t.tap(.apps)
+        #expect(!t.appsBoxOpen)
     }
 
     @Test func allAppsPushesGrid() throws {

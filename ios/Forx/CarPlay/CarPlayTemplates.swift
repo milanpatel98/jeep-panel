@@ -310,6 +310,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         guard let button = shownButtons.first(where: { $0.kind == kind }) else { return }
         // A pending button waits for the Jeep; taps do nothing.
         guard button.state != .pending else { return }
+        if kind != .apps { closeAppsBox() }
         switch kind {
         case .lock:
             // Unlock only when known locked; unknown or unlocked locks.
@@ -320,7 +321,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             if let motion { motion.mode = motion.mode.next }
             refresh()
         case .apps:
-            showApps()
+            toggleAppsBox()
         }
     }
 
@@ -370,7 +371,61 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         interface.push(list)
     }
 
-    /// The full grid, with the apps' real icons.
+    /// Whether the Apps box (iOS 27 map panel) is on screen.
+    private(set) var appsBoxOpen = false
+    /// The panel on screen, kept so its delegate (us) stays attached.
+    private var appsBox: AnyObject?
+
+    /// The Apps button: on iOS 27, a small box over the Jeep with the apps' real icons in rows of
+    /// four (tap one to open it; the box's ✕ or the button again closes it). Older iOS: the grid page.
+    func toggleAppsBox() {
+        if #available(iOS 27.0, *) {
+            if appsBoxOpen {
+                appsBoxOpen = false
+                mapTemplate.hidePanel(completion: nil)
+            } else {
+                let panel = appsPanel()
+                appsBox = panel
+                appsBoxOpen = true
+                mapTemplate.showPanel(panel, completion: nil)
+            }
+        } else {
+            showApps()
+        }
+    }
+
+    @available(iOS 27.0, *)
+    private func appsPanel() -> CPMapPanel {
+        let apps = model?.apps ?? CarPlayModel.appList
+        let dark = mapKey?.dark ?? true
+        let buttons = apps.prefix(Self.maxGridButtons).map { app in
+            let image = AppIconArt.image(app, side: Self.boxIcon, circle: false, dark: dark)
+            let url = app.url
+            return CPGridButton(titleVariants: [app.title], image: image) { [weak self] _ in
+                self?.closeAppsBox()
+                self?.open(url)
+            }
+        }
+        // rows of four (a panel item holds at most four grid buttons)
+        let rows = stride(from: 0, to: buttons.count, by: 4).map { i -> CPMapPanelItem in
+            let item = CPMapPanelItem(gridButtons: Array(buttons[i..<min(i + 4, buttons.count)]))
+            item.showsBottomSeparator = false
+            return item
+        }
+        let panel = CPMapPanel(title: "Apps", sections: [CPMapPanelSection(title: nil, items: rows)], buttonConfiguration: nil)
+        panel.showsCloseButton = true
+        panel.delegate = self
+        return panel
+    }
+
+    /// Closes the Apps box if it's open (an app opening, another button).
+    func closeAppsBox() {
+        guard appsBoxOpen else { return }
+        appsBoxOpen = false
+        if #available(iOS 27.0, *) { mapTemplate.hidePanel(completion: nil) }
+    }
+
+    /// The full grid, with the apps' real icons (iOS 26: what the Apps button opens).
     func showApps() {
         if interface.topTemplate is CPGridTemplate { return }
         let apps = model?.apps ?? CarPlayModel.appList
@@ -445,6 +500,8 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     // MARK: Buttons
 
     static let gridIcon: CGFloat = 54
+    /// The Apps box's icons: small.
+    static let boxIcon: CGFloat = 40
     /// A map button's canvas (its tap target).
     static let tileSide: CGFloat = 44
     static let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
@@ -526,4 +583,17 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }.withRenderingMode(.alwaysOriginal)
     }
 
+}
+
+// MARK: - Apps box (iOS 27 map panel)
+
+@available(iOS 27.0, *)
+extension CarPlayTemplates: @preconcurrency CPMapPanel.Delegate {
+    func panelDidHide(_ panel: CPMapPanel) {
+        // the driver's ✕ (or our hide): the button opens it again next time
+        if panel === appsBox {
+            appsBoxOpen = false
+            appsBox = nil
+        }
+    }
 }
