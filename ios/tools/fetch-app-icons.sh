@@ -1,12 +1,12 @@
 #!/bin/sh
-# Downloads the CarPlay Apps tray's real app icons (App Store artwork, 512 px) into
+# Downloads the CarPlay Apps grid's real app icons (App Store artwork, 512 px) into
 # Forx/Assets.xcassets as appicon-<id>.imageset. Run on the Mac from ios/: sh tools/fetch-app-icons.sh
-# Phone has no App Store page: it keeps its SF Symbol. Personal use only.
+# Personal use only.
 set -eu
 cd "$(dirname "$0")/.."
 assets=Forx/Assets.xcassets
 for pair in youtubemusic:1017492454 spotify:324684580 applemusic:1108187390 applemaps:915056765 \
-            podcasts:525463029 googlemaps:585027354 waze:323229106; do
+            podcasts:525463029 googlemaps:585027354 waze:323229106 phone:1146562108; do
   name=${pair%%:*}; id=${pair##*:}
   url=$(curl -fsS "https://itunes.apple.com/lookup?id=$id&country=us" |
         python3 -c 'import json,sys; r=json.load(sys.stdin)["results"]; print(r[0]["artworkUrl512"] if r else "")')

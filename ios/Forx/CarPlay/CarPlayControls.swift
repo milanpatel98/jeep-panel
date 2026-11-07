@@ -243,43 +243,6 @@ final class JeepGestures {
     var regionJSON: ((CGFloat) -> String)?
 }
 
-// MARK: - Apps tray
-
-/// The Apps tray in the bottom-right corner. Open: the map buttons become the four favourite
-/// apps and a panel with their names rises behind them. Closes after 8 s without use, on any
-/// command, or when an app opens.
-@Observable
-final class AppTray {
-    static let idleTimeout: Duration = .seconds(8)
-
-    private(set) var isOpen = false
-    @ObservationIgnored private var closer: Task<Void, Never>? = nil
-
-    func toggle() {
-        if isOpen { close() } else { open() }
-    }
-
-    func open() {
-        if !isOpen { isOpen = true }
-        armTimer()
-    }
-
-    func close() {
-        closer?.cancel()
-        closer = nil
-        if isOpen { isOpen = false }
-    }
-
-    private func armTimer() {
-        closer?.cancel()
-        closer = Task { [weak self] in
-            try? await Task.sleep(for: AppTray.idleTimeout)
-            guard !Task.isCancelled else { return }
-            self?.close()
-        }
-    }
-}
-
 // MARK: - App icons
 
 /// The apps' real icons (bundled as `appicon-<id>`, see ios/README.md), drawn into the iOS icon

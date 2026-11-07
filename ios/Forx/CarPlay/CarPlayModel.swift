@@ -99,8 +99,6 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
         }
     }
 
-    /// The tray's favourites: the first four apps.
-    static var favouriteApps: [CarPlayApp] { Array(appList.prefix(4)) }
 
     /// The Apps grid, in order; CPGridTemplate holds at most 8. `symbol` is the fallback when
     /// the app's icon isn't bundled (`appicon-<id>`).

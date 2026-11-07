@@ -62,7 +62,6 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             if let roof = CarPlayDebug.demoRoof { AppModel.roof = roof }
             if let mode = CarPlayDebug.demoMode { motion.mode = mode }
             if CarPlayDebug.demoMap { templates?.setMap(open: true) }
-            if CarPlayDebug.demoTray { templates?.toggleTray() }
             CarPlayDebug.runDemoDrag(gestures, motion: motion)
         }
         #endif
@@ -95,7 +94,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     // MARK: Store → window
 
-    /// Builds the dashboard under observation (store, roof, the tray and the dashboard's own
+    /// Builds the dashboard under observation (store, roof and the dashboard's own
     /// motion). The first change re-runs this on the next main-actor turn, so a burst of changes
     /// becomes one rebuild.
     private func observe() {
@@ -175,6 +174,6 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         return DashboardView(
             model: model, jeepState: state, location: location, battery: snapshot?.evPercent,
-            charging: snapshot?.charging == true, dark: dark, gestures: gestures, motion: motion, tray: templates?.tray)
+            charging: snapshot?.charging == true, dark: dark, gestures: gestures, motion: motion)
     }
 }

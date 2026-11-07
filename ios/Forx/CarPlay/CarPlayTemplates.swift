@@ -44,11 +44,10 @@ enum CarPlayDebug {
     static var demoOpen: Bool { demo && mode?.contains("open") == true }
     static var forceDay: Bool { demo && mode?.contains("day") == true }
     /// Demo words that put the screen into a state at launch, for screenshots without a tap:
-    /// `map` (Earth open), `tray` (the Apps tray), `turntable` / `tires` (the Jeep views),
+    /// `map` (Earth open), `turntable` / `tires` (the Jeep views),
     /// `roof=panels|off|doorsOff`. Example: `demo-open-map-day`.
     static var demoWords: [String] { demo ? (mode ?? "").split(separator: "-").map(String.init) : [] }
     static var demoMap: Bool { demoWords.contains("map") }
-    static var demoTray: Bool { demoWords.contains("tray") }
     static var demoMode: JeepMode? {
         demoWords.contains("turntable") ? .turntable : demoWords.contains("tires") ? .tires : nil
     }
@@ -99,8 +98,7 @@ enum CarPlayDebug {
 
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the More
 /// list, the Apps grid and Settings, pushed on tap. Map buttons (plain glyphs, no tiles): Jeep
-/// (views), Lock, Earth (the map) and Apps (the tray: the map buttons become the four favourite
-/// apps until one opens, a command runs, or 8 s pass). Bar buttons (they hide when the screen
+/// (views), Lock, Earth (the map) and Apps (Apple's grid of every app, with their real icons). Bar buttons (they hide when the screen
 /// isn't touched): Roof (steps the roof one part per tap, for cars and the simulator that send
 /// no drags) and More.
 /// Fingers: CarPlay's pan callbacks (and, on iOS 26 cars, zoom and rotation) reach the 3D Jeep
@@ -108,12 +106,8 @@ enum CarPlayDebug {
 @MainActor
 final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     let mapTemplate = CPMapTemplate()
-    /// The map buttons now shown, top to bottom (mirrors `mapTemplate.mapButtons`); empty while
-    /// the tray shows its apps instead.
+    /// The map buttons now shown, top to bottom (mirrors `mapTemplate.mapButtons`).
     private(set) var shownButtons: [CarPlayButton] = []
-    /// The apps on the map buttons while the tray is open.
-    private(set) var shownApps: [CarPlayApp] = []
-    let tray: AppTray
     let gestures: JeepGestures?
     /// What the map buttons were last drawn for, so an unchanged state reassigns nothing.
     private var mapKey: MapKey?
@@ -121,7 +115,6 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private struct MapKey: Equatable {
         let buttons: [CarPlayButton]
         let dark: Bool
-        let trayOpen: Bool
     }
 
     private let interface: any CarPlayInterface
@@ -135,7 +128,6 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     private struct BarsKey: Equatable {
         let signedIn: Bool
-        let trayOpen: Bool
         let roof: String
         let dark: Bool
     }
@@ -164,13 +156,11 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         perform: @escaping (JeepCommand) -> Void,
         setRoof: @escaping (String) -> Void = { AppModel.roof = $0 },
         email: @escaping () -> String? = { AppModel.store.email },
-        tray: AppTray = AppTray(),
         gestures: JeepGestures? = nil
     ) {
         self.interface = interface
         self.open = open
         self.perform = perform
-        self.tray = tray
         self.gestures = gestures
         self.setRoof = setRoof
         self.email = email
@@ -259,36 +249,25 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     /// Updates the map template in place, and any More or Settings list on screen. Only what
     /// changed is reassigned, so nothing flickers. `dark` is CarPlay's appearance (the tiles'
-    /// colours). Reads `tray.isOpen`, so a caller under observation rebuilds when it changes.
+    /// colours).
     func update(_ model: CarPlayModel, dark: Bool = true) {
         self.model = model
         gestures?.roof = model.roofKey
-        let trayOpen = model.signedIn && tray.isOpen
-        if !model.signedIn && tray.isOpen { tray.close() }
         if !model.signedIn, let motion, motion.mapOpen || motion.mode != .hero {
             motion.mapOpen = false
             motion.mode = .hero
         }
         let buttons = model.signedIn ? Array(model.buttons.prefix(Self.maxMapButtons)) : []
-        let key = MapKey(buttons: buttons, dark: dark, trayOpen: trayOpen)
+        let key = MapKey(buttons: buttons, dark: dark)
         if key != mapKey {
             mapKey = key
-            if trayOpen {
-                shownButtons = []
-                shownApps = CarPlayModel.favouriteApps
-                if !CarPlayDebug.skipMapButtons {
-                    mapTemplate.mapButtons = shownApps.indices.map { appButton($0, dark: dark) }
-                }
-            } else {
-                shownApps = []
-                shownButtons = buttons
-                if !CarPlayDebug.skipMapButtons {
-                    mapTemplate.mapButtons = buttons.map { mapButton($0, dark: dark) }
-                }
+            shownButtons = buttons
+            if !CarPlayDebug.skipMapButtons {
+                mapTemplate.mapButtons = buttons.map { mapButton($0, dark: dark) }
             }
         }
 
-        let bars = BarsKey(signedIn: model.signedIn, trayOpen: trayOpen, roof: model.roofKey, dark: dark)
+        let bars = BarsKey(signedIn: model.signedIn, roof: model.roofKey, dark: dark)
         if bars != barsKey {
             barsKey = bars
             setBarButtons(bars)
@@ -310,10 +289,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     private func setBarButtons(_ key: BarsKey) {
         if CarPlayDebug.skipBarButtons { return }
         if key.signedIn {
-            // In tray mode: the full grid of apps, one tap away.
-            mapTemplate.leadingNavigationBarButtons = key.trayOpen
-                ? [CPBarButton(title: "All apps") { [weak self] _ in self?.showApps() }]
-                : []
+            mapTemplate.leadingNavigationBarButtons = []
             // Roof: the top-view Jeep for the roof it's on; a tap steps it (the strip's template path)
             let roofImage = Self.roofGlyph(key.roof, colour: key.dark ? .white : Self.ink, height: 24)
             mapTemplate.trailingNavigationBarButtons = [
@@ -336,18 +312,15 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         guard button.state != .pending else { return }
         switch kind {
         case .lock:
-            tray.close()
             // Unlock only when known locked; unknown or unlocked locks.
             perform(button.isLocked == true ? .unlock : .lock)
         case .earth:
-            tray.close()
             setMap(open: !(motion?.mapOpen ?? false))
         case .jeep:
-            tray.close()
             if let motion { motion.mode = motion.mode.next }
             refresh()
         case .apps:
-            toggleTray()
+            showApps()
         }
     }
 
@@ -363,21 +336,6 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     func stepRoof() {
         guard let model, model.signedIn else { return }
         setRoof(CarPlayModel.nextRoof(after: model.roofKey))
-    }
-
-    /// Opens or closes the Apps tray; the next `update` swaps the map buttons.
-    func toggleTray() {
-        tray.toggle()
-        refresh()
-    }
-
-    /// A favourite app on the map buttons (tray mode): opens it and closes the tray.
-    func tapApp(_ index: Int) {
-        guard shownApps.indices.contains(index) else { return }
-        let url = shownApps[index].url
-        tray.close()
-        refresh()
-        open(url)
     }
 
     /// Redraws for the state the buttons just changed (the scene rebuilds the rest under observation).
@@ -414,6 +372,7 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
 
     /// The full grid, with the apps' real icons.
     func showApps() {
+        if interface.topTemplate is CPGridTemplate { return }
         let apps = model?.apps ?? CarPlayModel.appList
         let dark = mapKey?.dark ?? true
         let buttons = apps.prefix(Self.maxGridButtons).map { app in
@@ -443,7 +402,6 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
             let item = CPListItem(text: row.title, detailText: row.detail)
             if let cmd = row.action {
                 item.handler = { [weak self] _, completion in
-                    self?.tray.close()
                     self?.perform(cmd)
                     completion()
                 }
@@ -496,13 +454,6 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         let kind = b.kind
         let button = CPMapButton { [weak self] _ in self?.tap(kind) }
         button.image = Self.glyph(b.symbol, state: b.state, dark: dark)
-        return button
-    }
-
-    /// A favourite app as a round map button: its real icon clipped to a circle.
-    private func appButton(_ index: Int, dark: Bool) -> CPMapButton {
-        let button = CPMapButton { [weak self] _ in self?.tapApp(index) }
-        button.image = AppIconArt.image(shownApps[index], side: Self.tileSide, circle: true, dark: dark)
         return button
     }
 

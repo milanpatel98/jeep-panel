@@ -73,14 +73,6 @@ nonisolated struct DashboardLayout: Equatable, Sendable {
         }
     }
 
-    /// The tray panel's rect: behind the button column, as tall as its rows plus a title.
-    func trayFrame(count: Int) -> CGRect {
-        let rows = CGFloat(count) * Self.buttonPitch
-        let height = rows + 46
-        let width: CGFloat = 196
-        return CGRect(x: size.width - width, y: size.height - height, width: width, height: height)
-    }
-
     /// The toast (a store message) sits low in the car's region.
     var toastBottom: CGFloat { size.height - 14 }
 }
@@ -121,9 +113,7 @@ nonisolated struct DashboardTheme: Equatable, Sendable {
     var secondary: Color { dark ? Color(hex: 0x8E8E93) : Color(hex: 0x6E6E73) }
     var hairline: Color { dark ? Color.white.opacity(0.14) : Color.black.opacity(0.12) }
     var handle: Color { dark ? Color.white.opacity(0.38) : Color.black.opacity(0.28) }
-    var tray: Color { dark ? Color(hex: 0x1C1C1E, opacity: 0.92) : Color.white.opacity(0.94) }
-    var trayEdge: Color { dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06) }
-    var trayShadow: Color { dark ? Color.black.opacity(0.55) : Color.black.opacity(0.14) }
+    var edge: Color { dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06) }
     var toast: Color { dark ? Color(hex: 0x2C2C2E, opacity: 0.94) : Color.white.opacity(0.96) }
     /// The battery's fill and the charging bolt: a quiet grey (no green anywhere on the screen).
     var gauge: Color { dark ? Color(hex: 0xA1A1A6) : Color(hex: 0x6E6E73) }
@@ -135,8 +125,7 @@ nonisolated struct DashboardTheme: Equatable, Sendable {
 // MARK: - View
 
 /// The CarPlay window: the 3D Jeep full-screen (the page draws its call-outs and the roof strip),
-/// a status row top-left, the map sliding in from the right when Earth is on, the Apps tray's
-/// names behind the map buttons, Milan's Jeep while the page loads. A picture: every control is a
+/// a status row top-left, the map sliding in from the right when Earth is on, Milan's Jeep while the page loads. A picture: every control is a
 /// real template button drawn by CarPlay over it; fingers reach the 3D Jeep through `gestures`.
 struct DashboardView: View {
     let model: CarPlayModel
@@ -151,7 +140,6 @@ struct DashboardView: View {
     var dark: Bool = true
     var gestures: JeepGestures? = nil
     var motion: DashboardMotion? = nil
-    var tray: AppTray? = nil
 
     private var theme: DashboardTheme { DashboardTheme(dark: dark) }
     private var mapOpen: Bool { motion?.mapOpen ?? false }
@@ -175,8 +163,6 @@ struct DashboardView: View {
                     toast(layout)
 
                     mapLayer(layout)
-
-                    trayLayer(layout)
 
                     loadingLayer(layout)
                 } else {
@@ -270,7 +256,7 @@ struct DashboardView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(theme.toast, in: Capsule())
-                    .overlay(Capsule().strokeBorder(theme.trayEdge, lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(theme.edge, lineWidth: 1))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -303,46 +289,6 @@ struct DashboardView: View {
         .animation(dividerDx == 0 ? DashboardLayout.slide : nil, value: dividerDx)
         .accessibilityHidden(true)
         .allowsHitTesting(false)
-    }
-
-    // MARK: Apps tray
-
-    /// A glass panel rising from the corner behind the map buttons (which are the four favourite
-    /// apps while it's open), their names on the buttons' rows.
-    private func trayLayer(_ l: DashboardLayout) -> some View {
-        let open = tray?.isOpen ?? false
-        let apps = CarPlayModel.favouriteApps
-        let frame = l.trayFrame(count: apps.count)
-        let centres = l.buttonCentres(count: apps.count)
-        return ZStack(alignment: .topLeading) {
-            if open {
-                ZStack(alignment: .topLeading) {
-                    UnevenRoundedRectangle(topLeadingRadius: 24, style: .continuous)
-                        .fill(theme.tray)
-                        .overlay(UnevenRoundedRectangle(topLeadingRadius: 24, style: .continuous).strokeBorder(theme.trayEdge, lineWidth: 1))
-                        .shadow(color: theme.trayShadow, radius: 22, y: 8)
-                    Text("Apps")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.secondary)
-                        .offset(x: 18, y: 14)
-                    ForEach(Array(apps.enumerated()), id: \.element.title) { i, app in
-                        Text(app.title)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(theme.text)
-                            .lineLimit(1)
-                            .frame(width: frame.width - DashboardLayout.buttonColumn - 18, height: DashboardLayout.buttonPitch, alignment: .trailing)
-                            .offset(x: 18, y: centres[i] - frame.minY - DashboardLayout.buttonPitch / 2)
-                    }
-                }
-                .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-        .offset(x: frame.minX, y: frame.minY)
-        .animation(open ? .timingCurve(0.22, 1, 0.36, 1, duration: 0.42) : .easeIn(duration: 0.18), value: open)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     // MARK: Loading

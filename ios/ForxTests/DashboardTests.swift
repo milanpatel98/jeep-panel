@@ -44,15 +44,12 @@ struct DashboardLayoutTests {
         #expect(near(DashboardLayout(size: CGSize(width: 1920, height: 720)).statusFont, 13))
     }
 
-    @Test func trayRowsSitOnTheMapButtons() {
+    @Test func buttonCentres() {
         let centres = l.buttonCentres(count: 4)
         #expect(centres.count == 4)
         #expect(near(centres[3], 360 - 22.5))
         #expect(near(centres[2], 360 - 22.5 - 44))
         #expect(near(centres[0], 360 - 22.5 - 3 * 44))
-        let tray = l.trayFrame(count: 4)
-        #expect(near(tray.maxX, 910) && near(tray.maxY, 360))
-        #expect(tray.minY < centres[0] - 22)  // the title fits above the first row
         #expect(l.buttonCentres(count: 0).isEmpty)
     }
 

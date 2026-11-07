@@ -224,57 +224,22 @@ struct CarPlaySceneTests {
         #expect(rec.commands.last == .climateOff)
     }
 
-    @Test func trayModeSwapsMapButtonsToFavourites() {
+    @Test func appsButtonOpensTheGrid() throws {
         let fake = FakeCarPlayInterface()
         let t = make(fake, Recorder())
         t.update(model(snap()))
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
-        t.toggleTray()
-        #expect(t.tray.isOpen)
-        #expect(t.shownButtons.isEmpty)
-        #expect(t.shownApps.map(\.title) == ["YouTube Music", "Spotify", "Apple Music", "Apple Maps"])
-        #expect(t.mapTemplate.mapButtons.count == 4)
-        // "All apps" leads; Roof and More stay trailing
-        #expect(t.mapTemplate.leadingNavigationBarButtons.count == 1)
-        #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)
-        // The same state again reassigns nothing.
-        let before = t.mapTemplate.mapButtons
-        t.update(model(snap()))
-        #expect(t.mapTemplate.mapButtons.first === before.first)
-        // Closing brings the command buttons back.
-        t.toggleTray()
-        #expect(!t.tray.isOpen)
-        #expect(t.shownButtons.map(\.kind) == [.jeep, .lock, .earth, .apps])
+        t.tap(.apps)
+        let grid = try #require(fake.pushed.last as? CPGridTemplate)
+        #expect(grid.gridButtons.count == 8)
+        t.tap(.apps)  // no second push
+        #expect(fake.pushed.count == 1)
         #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)
-    }
-
-    @Test func favouriteTapOpensURLAndClosesTray() {
-        let rec = Recorder()
-        let t = make(FakeCarPlayInterface(), rec)
-        t.update(model(snap()))
-        t.toggleTray()
-        t.tapApp(1)
-        #expect(rec.urls == [URL(string: "spotify://")!])
-        #expect(!t.tray.isOpen)
-        #expect(t.shownApps.isEmpty)
-        #expect(t.shownButtons.map(\.kind) == [.jeep, .lock, .earth, .apps])
-    }
-
-    @Test func commandClosesTray() {
-        let rec = Recorder()
-        let t = make(FakeCarPlayInterface(), rec)
-        t.update(model(snap()))
-        t.tray.open()
-        t.tap(.lock)
-        #expect(!t.tray.isOpen)
-        #expect(rec.commands == [.unlock])
     }
 
     @Test func allAppsPushesGrid() throws {
         let fake = FakeCarPlayInterface()
         let t = make(fake, Recorder())
         t.update(model(snap()))
-        t.toggleTray()
         t.showApps()
         let grid = try #require(fake.pushed.last as? CPGridTemplate)
         #expect(grid.gridButtons.count == 8)

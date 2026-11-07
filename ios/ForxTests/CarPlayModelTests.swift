@@ -146,7 +146,6 @@ struct CarPlayModelTests {
             "YouTube Music", "Spotify", "Apple Music", "Apple Maps",
             "Podcasts", "Google Maps", "Waze", "Phone",
         ])
-        #expect(CarPlayModel.favouriteApps.map(\.title) == ["YouTube Music", "Spotify", "Apple Music", "Apple Maps"])
         #expect(m.apps.map(\.icon) == [
             "appicon-youtubemusic", "appicon-spotify", "appicon-applemusic", "appicon-applemaps",
             "appicon-podcasts", "appicon-googlemaps", "appicon-waze", "appicon-phone",
