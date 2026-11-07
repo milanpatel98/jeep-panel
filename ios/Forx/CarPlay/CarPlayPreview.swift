@@ -23,6 +23,8 @@ struct CarPlayPreview: View {
             let dark = !CarPlayDebug.forceDay
             let width = geo.size.width
             let dashboard = CarPlaySceneDelegate.dashboard(dark: dark, gestures: gestures, motion: motion)
+            // no templates here to keep the gestures' roof current: the preview does it
+            let _ = gestures?.roof = dashboard.model.roofKey
             ZStack(alignment: .topLeading) {
                 (dark ? Color.black : Color(hex: 0xF5F5F7)).ignoresSafeArea()
                 dashboard
