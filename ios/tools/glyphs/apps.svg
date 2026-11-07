@@ -1,8 +1,0 @@
-<svg width="28" height="28" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28">
-  <!-- Forx map button: Apps (the dots) -->
-  <g id="body" fill="#fff">
-    <circle cx="7.2" cy="7.2" r="2.3"/><circle cx="14" cy="7.2" r="2.3"/><circle cx="20.8" cy="7.2" r="2.3"/>
-    <circle cx="7.2" cy="14" r="2.3"/><circle cx="14" cy="14" r="2.3"/><circle cx="20.8" cy="14" r="2.3"/>
-    <circle cx="7.2" cy="20.8" r="2.3"/><circle cx="14" cy="20.8" r="2.3"/><circle cx="20.8" cy="20.8" r="2.3"/>
-  </g>
-</svg>

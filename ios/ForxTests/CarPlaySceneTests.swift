@@ -68,7 +68,7 @@ struct CarPlaySceneTests {
         #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)  // nothing over the status row
         #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)  // Roof, More; Settings is in More
         #expect(t.mapTemplate.automaticallyHidesNavigationBar)
-        #expect(!t.mapTemplate.hidesButtonsWithNavigationBar)
+        #expect(t.mapTemplate.hidesButtonsWithNavigationBar)  // all buttons auto-hide
 
         // The same model again reassigns nothing (no flicker).
         let mapBefore = t.mapTemplate.mapButtons

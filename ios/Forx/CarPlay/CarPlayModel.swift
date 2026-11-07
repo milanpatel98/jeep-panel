@@ -13,8 +13,8 @@ nonisolated enum CarPlayButtonState: Sendable, Equatable {
 nonisolated struct CarPlayButton: Sendable, Equatable {
     let kind: CarPlayButtonKind
     let state: CarPlayButtonState
-    /// The glyph's asset (ios/tools/glyphs): "glyph-jeep-views", "glyph-lock" / "glyph-lock-open",
-    /// "glyph-globe", "glyph-apps".
+    /// The glyph: Milan's Jeep side icon (asset "glyph-jeep") or an SF Symbol he picked:
+    /// "lock.fill" / "lock.open.fill", "location.fill" (map), "square.grid.3x3.fill" (apps).
     let symbol: String
     /// The snapshot's lock state (Lock button only): true locked, false unlocked, nil unknown.
     let isLocked: Bool?
@@ -150,16 +150,16 @@ nonisolated struct CarPlayModel: Sendable, Equatable {
     ) -> [CarPlayButton] {
         let supported: Set<JeepCommand> = s?.supported ?? []
         var buttons: [CarPlayButton] = []
-        buttons.append(CarPlayButton(kind: .jeep, state: mode == .hero ? .off : .on, symbol: "glyph-jeep-views", isLocked: nil))
+        buttons.append(CarPlayButton(kind: .jeep, state: mode == .hero ? .off : .on, symbol: "glyph-jeep", isLocked: nil))
         if supported.contains(.lock) || supported.contains(.unlock) {
             let busy = pending.contains(.lock) || pending.contains(.unlock)
             let unlocked = s?.locked == false
             let state: CarPlayButtonState = busy ? .pending : (unlocked ? .on : .off)
-            let symbol = s?.locked == false ? "glyph-lock-open" : "glyph-lock"
+            let symbol = s?.locked == false ? "lock.open.fill" : "lock.fill"
             buttons.append(CarPlayButton(kind: .lock, state: state, symbol: symbol, isLocked: s?.locked))
         }
-        buttons.append(CarPlayButton(kind: .earth, state: mapOpen ? .on : .off, symbol: "glyph-globe", isLocked: nil))
-        buttons.append(CarPlayButton(kind: .apps, state: .off, symbol: "glyph-apps", isLocked: nil))
+        buttons.append(CarPlayButton(kind: .earth, state: mapOpen ? .on : .off, symbol: "location.fill", isLocked: nil))
+        buttons.append(CarPlayButton(kind: .apps, state: .off, symbol: "square.grid.3x3.fill", isLocked: nil))
         return buttons
     }
 

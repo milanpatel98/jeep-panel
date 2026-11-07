@@ -179,10 +179,10 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         // The host's view controller (share button, etc.) talks to the delegate; without one
         // it crashes CarPlayTemplateUIHost. Set before the template becomes root.
         if !CarPlayDebug.skipMapDelegate { mapTemplate.mapDelegate = self }
-        // Roof and More fade away when the screen isn't touched and come back on any touch.
-        // The map buttons stay.
+        // Every button fades away when the screen isn't touched (just the Jeep, no platters)
+        // and comes back on any touch.
         mapTemplate.automaticallyHidesNavigationBar = true
-        mapTemplate.hidesButtonsWithNavigationBar = false
+        mapTemplate.hidesButtonsWithNavigationBar = true
         if CarPlayDebug.listRoot {
             interface.setRoot(CPListTemplate(title: "Forx", sections: []))
         } else {
@@ -514,31 +514,29 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }
     }
 
-    /// The glyph's box: the assets are drawn in a 28 pt square (ios/tools/glyphs).
-    static let glyphBox: CGFloat = 28
-    /// The ring that marks a view or the map as on.
-    static let ringDiameter: CGFloat = 38
+    /// The Jeep side icon's width; the SF Symbols' point size (Milan's picks, Nov 6).
+    static let jeepWidth: CGFloat = 28
+    static let symbolPoint: CGFloat = 16
 
-    /// A map button's image: the glyph alone on a clear 44 pt canvas, at 3x (CarPlay draws no
-    /// tile of its own). Night: white; day: #1C1C1E. On: a hairline ring around it, or, for the
-    /// unlocked lock, the open-lock glyph in amber (the open state's colour, like the call-outs).
-    /// Pending: the glyph at 45%. Static: map button images don't animate.
-    static func glyph(_ asset: String, state: CarPlayButtonState, dark: Bool = true) -> UIImage {
+    /// A map button's image: the glyph alone on a clear 44 pt canvas, at 3x. No rings or tiles
+    /// of our own (CarPlay's platter is the only circle). Night: white; day: #1C1C1E. Unlocked:
+    /// the open lock in amber. Pending: the glyph at 45%. Static: map button images don't animate.
+    static func glyph(_ symbol: String, state: CarPlayButtonState, dark: Bool = true) -> UIImage {
         let ink: UIColor = dark ? .white : self.ink
-        let open = asset == "glyph-lock-open"
+        let open = symbol == "lock.open.fill"
         let colour = state == .pending ? ink.withAlphaComponent(0.45) : open ? amber : ink
-        let image = self.asset(asset, colour: colour, height: glyphBox)
+        let image: UIImage
+        if UIImage(named: symbol) != nil {
+            image = asset(symbol, colour: colour, width: jeepWidth)
+        } else {
+            let config = UIImage.SymbolConfiguration(pointSize: symbolPoint, weight: .semibold)
+            image = UIImage(systemName: symbol, withConfiguration: config)?
+                .withTintColor(colour, renderingMode: .alwaysOriginal) ?? UIImage()
+        }
         let side = tileSide
         let format = UIGraphicsImageRendererFormat()
         format.scale = 3
         return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
-            if state == .on && !open {
-                let ring = UIBezierPath(ovalIn: CGRect(
-                    x: (side - ringDiameter) / 2, y: (side - ringDiameter) / 2, width: ringDiameter, height: ringDiameter))
-                ring.lineWidth = 1.25
-                ink.withAlphaComponent(0.45).setStroke()
-                ring.stroke()
-            }
             let s = image.size
             image.draw(in: CGRect(x: (side - s.width) / 2, y: (side - s.height) / 2, width: s.width, height: s.height))
         }.withRenderingMode(.alwaysOriginal)
