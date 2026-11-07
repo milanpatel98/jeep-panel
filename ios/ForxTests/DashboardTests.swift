@@ -61,6 +61,9 @@ struct DashboardLayoutTests {
         #expect(DashboardTheme(dark: false).background == Color(hex: 0xF5F5F7))
         #expect(DashboardTheme(dark: false).text == Color(hex: 0x1C1C1E))
         #expect(DashboardTheme(dark: false).secondary == Color(hex: 0x6E6E73))
+        // the gauge (battery fill, bolt) is grey, never green
+        #expect(DashboardTheme(dark: true).gauge == Color(hex: 0xA1A1A6))
+        #expect(DashboardTheme(dark: false).gauge == Color(hex: 0x6E6E73))
     }
 
     @Test func batteryFillAndColour() {

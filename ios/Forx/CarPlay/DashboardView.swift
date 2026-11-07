@@ -92,7 +92,7 @@ nonisolated enum BatteryGauge {
         CGFloat(min(100, max(0, percent ?? 0))) / 100
     }
 
-    /// Green above 20%, otherwise red.
+    /// Grey above 20%, otherwise red.
     static func low(_ percent: Int?) -> Bool {
         (percent ?? 100) <= 20
     }
@@ -125,8 +125,9 @@ nonisolated struct DashboardTheme: Equatable, Sendable {
     var trayEdge: Color { dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06) }
     var trayShadow: Color { dark ? Color.black.opacity(0.55) : Color.black.opacity(0.14) }
     var toast: Color { dark ? Color(hex: 0x2C2C2E, opacity: 0.94) : Color.white.opacity(0.96) }
+    /// The battery's fill and the charging bolt: a quiet grey (no green anywhere on the screen).
+    var gauge: Color { dark ? Color(hex: 0xA1A1A6) : Color(hex: 0x6E6E73) }
 
-    static let green = Color(hex: 0x30D158)
     static let amber = Color(hex: 0xFF9F0A)
     static let red = Color(hex: 0xFF453A)
 }
@@ -229,14 +230,14 @@ struct DashboardView: View {
 
             if let ev = model.evText {
                 HStack(spacing: 6) {
-                    BatteryCapsule(percent: battery, edge: theme.secondary.opacity(0.5))
+                    BatteryCapsule(percent: battery, edge: theme.secondary.opacity(0.5), fill: theme.gauge)
                         .accessibilityHidden(true)
                     Text(ev)
                         .font(.system(size: l.statusFont, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(theme.text)
                     if charging {
-                        BreathingBolt()
+                        BreathingBolt(colour: theme.gauge)
                             .accessibilityLabel("Charging")
                     }
                 }
@@ -389,10 +390,11 @@ struct LoadingJeep: View {
 // MARK: - Battery and bolt
 
 /// The battery, drawn: a 24 × 11 capsule (3.5 corner, 1 pt edge), a 1.5 × 4 nub on the right,
-/// and an inner fill inset 1.5 pt as wide as the charge: green, red at 20% or less.
+/// and an inner fill inset 1.5 pt as wide as the charge: `fill` (grey), red at 20% or less.
 struct BatteryCapsule: View {
     let percent: Int?
     let edge: Color
+    let fill: Color
 
     var body: some View {
         let inner = CGSize(width: 24 - 3, height: 11 - 3)
@@ -401,7 +403,7 @@ struct BatteryCapsule: View {
                 RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                     .strokeBorder(edge, lineWidth: 1)
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(BatteryGauge.low(percent) ? DashboardTheme.red : DashboardTheme.green)
+                    .fill(BatteryGauge.low(percent) ? DashboardTheme.red : fill)
                     .frame(width: inner.width * BatteryGauge.fill(percent), height: inner.height)
                     .padding(.leading, 1.5)
             }
@@ -413,9 +415,11 @@ struct BatteryCapsule: View {
     }
 }
 
-/// `bolt.fill`, 11 pt green, its opacity breathing 0.45 ↔ 1 over 1.6 s; still with Reduce Motion.
-/// Driven by a timeline, so the dashboard's no-animation transaction doesn't stop it.
+/// `bolt.fill`, 11 pt in `colour` (the gauge grey), its opacity breathing 0.45 ↔ 1 over 1.6 s;
+/// still with Reduce Motion. Driven by a timeline, so the dashboard's no-animation transaction
+/// doesn't stop it.
 struct BreathingBolt: View {
+    let colour: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -436,7 +440,7 @@ struct BreathingBolt: View {
     private func bolt(opacity: Double) -> some View {
         Image(systemName: "bolt.fill")
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(DashboardTheme.green)
+            .foregroundStyle(colour)
             .opacity(opacity)
     }
 }

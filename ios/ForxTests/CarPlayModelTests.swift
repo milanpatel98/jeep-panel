@@ -46,11 +46,11 @@ struct CarPlayModelTests {
         #expect(m.rangeText == "186")
         #expect(m.evText == "78%")
         #expect(m.buttons.map(\.kind) == [.jeep, .lock, .earth, .apps])
-        #expect(button(m, .lock)?.symbol == "lock.fill")
+        #expect(button(m, .lock)?.symbol == "glyph-lock")
         #expect(button(m, .lock)?.state == .off)
         #expect(button(m, .earth)?.state == .off)
         #expect(button(m, .jeep)?.state == .off)
-        #expect(button(m, .apps)?.symbol == "circle.grid.3x3.fill")
+        #expect(button(m, .apps)?.symbol == "glyph-apps")
         #expect(m.roofKey == "on")
         #expect(m.mode == .hero)
         #expect(!m.mapOpen)
@@ -81,11 +81,11 @@ struct CarPlayModelTests {
         let s = snap(locked: true)
         let sent = model(s, pending: [.unlock])
         #expect(button(sent, .lock)?.state == .pending)
-        #expect(button(sent, .lock)?.symbol == "lock.fill")
+        #expect(button(sent, .lock)?.symbol == "glyph-lock")
         // Command failed: nothing pending, the Jeep still reports locked.
         let failed = model(s, pending: [])
         #expect(button(failed, .lock)?.state == .off)
-        #expect(button(failed, .lock)?.symbol == "lock.fill")
+        #expect(button(failed, .lock)?.symbol == "glyph-lock")
 
         // Climate lives in More now: pending shows "…", on shows "On"
         #expect(row(model(s, pending: [.climateOn]), "Climate")?.detail == "…")
@@ -155,12 +155,12 @@ struct CarPlayModelTests {
 
     @Test func lockSymbolAndState() {
         let open = model(snap(locked: false))
-        #expect(button(open, .lock)?.symbol == "lock.open.fill")
+        #expect(button(open, .lock)?.symbol == "glyph-lock-open")
         #expect(button(open, .lock)?.state == .on)
         let unknown = model(snap(locked: nil))
-        #expect(button(unknown, .lock)?.symbol == "lock.fill")
+        #expect(button(unknown, .lock)?.symbol == "glyph-lock")
         #expect(button(unknown, .lock)?.state == .off)
-        #expect(button(model(snap()), .earth)?.symbol == "globe.americas.fill")
+        #expect(button(model(snap()), .earth)?.symbol == "glyph-globe")
     }
 
     @Test func roofCyclesOnPanelsOffDoorsOff() {

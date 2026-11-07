@@ -79,23 +79,27 @@ export function boxCorners(min, max) {
 
 // ---------- v2: the overlay (call-outs, roof strip, tires), the car's region and the views ----------
 
-// The roof strip's steps, bottom to top: dragging up takes parts off one step at a time.
+// The roof strip's steps, in the order a drag up takes parts off: top on → panels off → top off → doors off.
 export const STRIP_STEPS = ['on', 'panels', 'off', 'doorsOff']
+// One step per this much finger travel (the app counts the steps; the page only shows the handle).
 export const STRIP_PITCH = 44
+// The handle rests in the middle of the track and follows the finger this far either way (2 steps);
+// the dotted track runs a little past that, so the handle never reaches its end.
+export const HANDLE_TRAVEL = 2 * STRIP_PITCH
+export const TRACK_HALF = HANDLE_TRAVEL + 22
 
-// Which step the Jeep is on (0 = Top on … 3 = Doors off).
+// Which step the Jeep is on (0 = Top on … 3 = Doors off): the handle shows that step's icon.
 export function stripIndex(roof, doorsOff) {
   if (doorsOff) return 3
   const i = STRIP_STEPS.indexOf(roof)
   return i < 0 ? 0 : i
 }
 
-// Where the thumb's centre sits on a track whose top step is at `top`: step `index` (bottom = 0),
-// plus the finger's residual pull `residual` (px, down positive) while a drag is on, never past the ends.
-export function stripThumbY(index, residual = 0, { top = 0, pitch = STRIP_PITCH, steps = STRIP_STEPS.length } = {}) {
-  const span = (steps - 1) * pitch
-  const y = top + (steps - 1 - index) * pitch + residual
-  return Math.min(top + span, Math.max(top, y))
+// Where the handle sits: the finger's pull `dy` (px, down positive) from the middle, never past
+// `travel` either way. 0 is home (it springs back there when the finger lets go).
+export function handleOffset(dy = 0, { travel = HANDLE_TRAVEL } = {}) {
+  if (!Number.isFinite(dy)) return 0
+  return Math.min(travel, Math.max(-travel, dy))
 }
 
 // The views the Jeep button cycles: the 3/4 hero, the top view turning on its own, the tires.
@@ -119,10 +123,10 @@ export function overlayCalls(prev = {}, next = {}) {
   return calls
 }
 
-// The box the car is fitted into: the region less the strip's column on its right (when the strip shows).
+// The box the car is fitted into: the region less the strip's column on its left (when the strip shows).
 export function carBox(region, { strip = true, stripWidth = 48 } = {}) {
-  const x1 = strip ? Math.max(region.x0 + 1, region.x1 - stripWidth) : region.x1
-  return { x0: region.x0, y0: region.y0, x1, y1: region.y1 }
+  const x0 = strip ? Math.min(region.x1 - 1, region.x0 + stripWidth) : region.x0
+  return { x0, y0: region.y0, x1: region.x1, y1: region.y1 }
 }
 
 // A cubic bezier easing (like CSS cubic-bezier), so the page and the app can share one curve.

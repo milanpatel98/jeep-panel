@@ -17,26 +17,31 @@ struct CarPlayPanTests {
         #expect(pan.end(velocity: .zero) == [.release])
     }
 
-    @Test func verticalDragWorksTheStrip() {
+    @Test func verticalDragWorksTheHandle() {
         var pan = CarPlayPan()
         #expect(pan.update(CGPoint(x: 1, y: -12)).isEmpty)
         #expect(pan.axis == .vertical)
-        // the thumb follows the finger from where the axis locked
-        #expect(pan.update(CGPoint(x: 1, y: -30)) == [.strip(-18)])
-        // 44 pt up: one step off, and the thumb's pull starts over from the new step
-        #expect(pan.update(CGPoint(x: 3, y: -60)) == [.roofStep(1), .strip(-4)])
-        #expect(pan.update(CGPoint(x: 3, y: -80)) == [.strip(-24)])
-        // back down past the step: it comes back
-        #expect(pan.update(CGPoint(x: 3, y: -10)) == [.roofStep(-1), .strip(2)])
+        // the handle follows the finger from where the axis locked
+        #expect(pan.update(CGPoint(x: 1, y: -30)) == [.handle(-18)])
+        // 44 pt up: one part off; the handle keeps following
+        #expect(pan.update(CGPoint(x: 3, y: -60)) == [.roofStep(1), .handle(-48)])
+        #expect(pan.update(CGPoint(x: 3, y: -80)) == [.handle(-68)])
+        // a little back down is nothing (a full step of travel from the last notch steps back)
+        #expect(pan.update(CGPoint(x: 3, y: -50)) == [.handle(-38)])
+        #expect(pan.update(CGPoint(x: 3, y: -10)) == [.roofStep(-1), .handle(2)])
         // a fast move crosses two steps at once
-        #expect(pan.update(CGPoint(x: 3, y: -110)) == [.roofStep(1), .roofStep(1), .strip(-10)])
-        #expect(pan.end(velocity: CGPoint(x: 0, y: 800)) == [.stripRelease])
+        #expect(pan.update(CGPoint(x: 3, y: -104)) == [.roofStep(1), .roofStep(1), .handle(-92)])
+        // letting go: the handle springs home
+        #expect(pan.end(velocity: CGPoint(x: 0, y: 800)) == [.handleRelease])
     }
 
     @Test func dragDownPutsPartsBack() {
         var pan = CarPlayPan()
         _ = pan.update(CGPoint(x: 0, y: 12))
-        #expect(pan.update(CGPoint(x: 0, y: 60)) == [.roofStep(-1), .strip(4)])
+        #expect(pan.update(CGPoint(x: 0, y: 60)) == [.roofStep(-1), .handle(48)])
+        #expect(pan.update(CGPoint(x: 0, y: 100)) == [.roofStep(-1), .handle(88)])
+        // and back up a step: a part comes off again
+        #expect(pan.update(CGPoint(x: 0, y: 56)) == [.roofStep(1), .handle(44)])
     }
 
     @Test func withTheMapOpenSidewaysMovesTheDivider() {
@@ -76,22 +81,22 @@ struct JeepGesturesTests {
         #expect(rec.calls == ["spin(4.0)", "release()"])
     }
 
-    @Test func verticalDragStepsTheRoofAndMovesTheThumb() {
+    @Test func verticalDragStepsTheRoofAndMovesTheHandle() {
         let (g, _, rec) = make()
         g.roof = "on"
         g.began()
         g.changed(CGPoint(x: 0, y: -12))
         g.changed(CGPoint(x: 0, y: -30))
-        #expect(rec.calls == ["strip(-18.0, 0)"])
+        #expect(rec.calls == ["handle(-18.0)"])
         g.changed(CGPoint(x: 0, y: -60))
         #expect(rec.roofs == ["panels"])
-        #expect(rec.calls.last == "strip(-4.0, 1)")
+        #expect(rec.calls.last == "handle(-48.0)")
         // the templates would set `roof` from the model; a test does it by hand
         g.roof = "panels"
         g.changed(CGPoint(x: 0, y: -104))
         #expect(rec.roofs == ["panels", "off"])
         g.ended(.zero)
-        #expect(rec.calls.last == "stripRelease()")
+        #expect(rec.calls.last == "handleRelease()")  // the handle springs home; the Jeep keeps "off"
     }
 
     @Test func roofNeverStepsPastTheEnds() {
@@ -162,6 +167,6 @@ struct JeepGesturesTests {
     @Test func settleLetsGo() {
         let (g, _, rec) = make()
         g.settle()
-        #expect(rec.calls == ["release()", "stripRelease()"])
+        #expect(rec.calls == ["release()", "handleRelease()"])
     }
 }

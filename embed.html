@@ -7,12 +7,17 @@
   <style>
     /* transparent page: the CarPlay window's colour shows through */
     :root {
-      --ink: #F5F5F7; --ink-2: rgba(245,245,247,.55); --line: rgba(245,245,247,.38); --dot: rgba(245,245,247,.22);
-      --amber: #FF9F0A; --green: #30D158;
+      --ink: #F5F5F7; --ink-2: rgba(245,245,247,.55); --line: rgba(245,245,247,.38);
+      --amber: #FF9F0A; --bolt: rgba(245,245,247,.62);
+      /* the roof strip: night has a mid-grey handle on lighter dots; day the reverse */
+      --bg: #000; --dot: rgba(245,245,247,.34); --handle: #9A9A9F; --handle-shadow: rgba(0,0,0,.5);
       color: var(--ink);
       font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased;
     }
-    [data-theme=light] { --ink: #1C1C1E; --ink-2: rgba(28,28,30,.55); --line: rgba(28,28,30,.34); --dot: rgba(28,28,30,.18); }
+    [data-theme=light] {
+      --ink: #1C1C1E; --ink-2: rgba(28,28,30,.55); --line: rgba(28,28,30,.34); --bolt: rgba(28,28,30,.55);
+      --bg: #F5F5F7; --dot: rgba(28,28,30,.34); --handle: #B9B9BE; --handle-shadow: rgba(0,0,0,.16);
+    }
     html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; -webkit-user-select: none; user-select: none; }
     /* feathered on all four sides: the floor and its reflection fade out, never a hard rectangle */
     canvas {
@@ -40,23 +45,26 @@
     .co.lock { color: var(--ink-2); }
     .co.lock.open { color: var(--amber); }
     .co.charge { color: var(--ink); }
-    .co.charge svg { width: 14px; height: 14px; color: var(--green); margin-bottom: 1px; }
+    .co.charge svg { width: 14px; height: 14px; color: var(--bolt); margin-bottom: 1px; }
     .co.charge.left svg { margin-left: auto; }
     .hide { opacity: 0 !important; }
 
-    /* the roof strip: a dotted track, the Jeep's top view as the thumb, faint arrows at the ends */
+    /* the roof strip: a dotted track with a spring handle (the Jeep's top view) resting in its middle */
     #strip { width: 48px; }
     #strip .dots {
-      position: absolute; left: 50%; transform: translateX(-50%); width: 34px;
+      position: absolute; left: 50%; top: 10px; bottom: 10px; transform: translateX(-50%); width: 34px;
       background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.4px); background-size: 11px 11px; background-position: 5.5px 5.5px;
     }
-    #strip .arr { position: absolute; left: 50%; width: 9px; height: 9px; border-right: 1.5px solid var(--dot); border-bottom: 1.5px solid var(--dot); }
-    #strip .arr.up { transform: translateX(-50%) rotate(-135deg); }
-    #strip .arr.dn { transform: translateX(-50%) rotate(45deg); }
-    #strip .thumb { position: absolute; left: 50%; width: 26px; height: 42px; transform: translate(-50%, -50%); transition: top .38s cubic-bezier(.22, 1, .36, 1); }
-    #strip[data-drag] .thumb { transition: none; }
-    #strip .thumb img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
-    [data-theme=light] #strip .thumb img { filter: invert(1) drop-shadow(0 1px 2px rgba(0,0,0,.12)); }
+    /* the handle follows the finger as is, then springs home (no bounce) in 350 ms */
+    #strip .thumb { position: absolute; left: 50%; width: 26px; height: 42px; transform: translate(-50%, -50%); transition: top .35s cubic-bezier(.2, .85, .25, 1); }
+    #strip[data-drag] .thumb, #strip.still .thumb { transition: none; }
+    /* a backing in the page's colour hides the dots behind the handle's cut-outs */
+    #strip .thumb .back { position: absolute; inset: -5px -8px; border-radius: 10px; background: var(--bg); }
+    #strip .thumb .glyph { position: absolute; inset: 0; filter: drop-shadow(0 1px 2px var(--handle-shadow)); }
+    #strip .thumb .icon {
+      position: absolute; inset: 0; background: var(--handle);
+      -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center;
+    }
 
     /* tires: the four pressures beside the wheels, "x minutes ago" under each */
     .tire { transform: translateY(-50%); white-space: nowrap; }
@@ -71,7 +79,7 @@
   <div id="ui">
     <svg id="lines" aria-hidden="true"></svg>
     <div id="strip" class="hide">
-      <div class="dots"></div><i class="arr up"></i><div class="thumb"><img alt=""></div><i class="arr dn"></i>
+      <div class="dots"></div><div class="thumb"><div class="back"></div><div class="glyph"><div class="icon"></div></div></div>
     </div>
   </div>
   <script type="module" src="/src/embed.js"></script>

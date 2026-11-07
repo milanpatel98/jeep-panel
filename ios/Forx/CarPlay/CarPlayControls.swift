@@ -9,7 +9,9 @@ import UIKit
 /// One finger drag on the CarPlay screen, from CarPlay's pan callbacks (cumulative translation).
 /// The first 10 pt decide the axis and lock it for the whole drag. Sideways turns the Jeep 1:1
 /// from where it locked (or, with the map open, slides the divider); up and down works the roof
-/// strip: the thumb follows the finger and every 44 pt crossed is one roof step.
+/// strip's spring handle: it follows the finger, and every `stepPoints` of travel from the last
+/// notch is one roof step, up taking a part off and down putting one back. Letting go springs
+/// the handle home; only the Jeep keeps the change.
 nonisolated struct CarPlayPan: Sendable, Equatable {
     enum Axis: Sendable, Equatable { case horizontal, vertical }
 
@@ -22,17 +24,17 @@ nonisolated struct CarPlayPan: Sendable, Equatable {
         case divider(Double)
         /// The divider drag ended at this offset, with this sideways velocity (pt/s).
         case dividerRelease(Double, Double)
-        /// The strip's thumb is pulled this far (down positive) from the step it's on.
-        case strip(Double)
-        /// Take parts off (+1, drag up) or put them back (−1, drag down), one step.
+        /// The strip's handle is pulled this far (down positive) from the middle of its track.
+        case handle(Double)
+        /// Take a part off (+1, drag up) or put one back (−1, drag down), one step.
         case roofStep(Int)
-        /// The vertical drag ended: the thumb snaps to its step.
-        case stripRelease
+        /// The vertical drag ended: the handle springs back to the middle.
+        case handleRelease
     }
 
     static let lockDistance: Double = 10
     static let degreesPerPoint: Double = 0.4
-    /// One roof step per this many points up or down.
+    /// One roof step per this many points of travel from the last notch, either way.
     static let stepPoints: Double = 44
 
     /// With the map open a sideways drag moves the divider instead of turning the Jeep.
@@ -41,8 +43,8 @@ nonisolated struct CarPlayPan: Sendable, Equatable {
     private var lastX: Double = 0
     private var lastDx: Double = 0
     private var startY: Double = 0
-    /// Steps already taken this drag (up positive).
-    private var steps = 0
+    /// The notch the handle last stepped at, in steps up from where the drag began.
+    private var notch = 0
 
     init(mapOpen: Bool = false) {
         self.mapOpen = mapOpen
@@ -68,14 +70,18 @@ nonisolated struct CarPlayPan: Sendable, Equatable {
             return dx == 0 ? [] : [.spin(dx * Self.degreesPerPoint)]
         case .vertical:
             let dy = Double(t.y) - startY
-            let wanted = Int((-dy / Self.stepPoints).rounded(.towardZero))
+            let up = -dy
             var out: [Action] = []
-            while wanted != steps {   // a fast move can cross more than one step
-                let sign = wanted > steps ? 1 : -1
-                out.append(.roofStep(sign))
-                steps += sign
+            // a full step of travel from the last notch, either way (a fast move crosses several)
+            while up - Double(notch) * Self.stepPoints >= Self.stepPoints {
+                notch += 1
+                out.append(.roofStep(1))
             }
-            out.append(.strip(dy + Double(steps) * Self.stepPoints))
+            while up - Double(notch) * Self.stepPoints <= -Self.stepPoints {
+                notch -= 1
+                out.append(.roofStep(-1))
+            }
+            out.append(.handle(dy))
             return out
         }
     }
@@ -83,7 +89,7 @@ nonisolated struct CarPlayPan: Sendable, Equatable {
     mutating func end(velocity: CGPoint) -> [Action] {
         switch axis {
         case .horizontal: return mapOpen ? [.dividerRelease(lastDx, Double(velocity.x))] : [.release]
-        case .vertical: return [.stripRelease]
+        case .vertical: return [.handleRelease]
         case nil: return []
         }
     }
@@ -111,7 +117,7 @@ final class DashboardMotion {
 
 /// Carries CarPlay's gestures (from `CarPlayTemplates`) to the 3D page (`JeepEmbedView` sets `send`)
 /// and the dashboard (`motion`): a sideways drag turns the Jeep or slides the map's divider, an
-/// up-and-down drag works the roof strip, two fingers zoom (iOS 26 cars) or turn it.
+/// up-and-down drag works the roof strip's handle, two fingers zoom (iOS 26 cars) or turn it.
 final class JeepGestures {
     /// Runs `window.jeepEmbed.<call>` on the page; nil until the page's view is up.
     var send: ((String) -> Void)?
@@ -157,11 +163,11 @@ final class JeepGestures {
         for action in p.end(velocity: velocity) { perform(action) }
     }
 
-    /// Whatever is going on stops; the Jeep settles.
+    /// Whatever is going on stops; the Jeep settles and the handle springs home.
     func settle() {
         pan = nil
         perform(.release)
-        perform(.stripRelease)
+        perform(.handleRelease)
     }
 
     // MARK: Two fingers (iOS 26 cars)
@@ -202,7 +208,7 @@ final class JeepGestures {
 
     // MARK: Actions → the page and the dashboard
 
-    /// Where the thumb sits for the roof `roof`: step 0 (Top on) … 3 (Doors off).
+    /// The roof's step: 0 (Top on) … 3 (Doors off); a drag steps from here.
     var roofIndex: Int { CarPlayModel.roofIndex(roof) }
 
     private func perform(_ action: CarPlayPan.Action) {
@@ -219,8 +225,8 @@ final class JeepGestures {
             let far = dx > Double(dividerTravel) * Double(Self.closeShare) || velocity > Self.closeVelocity
             motion.dividerDx = 0
             if far { closeMap?() } else { send?("layoutRelease()") }
-        case .strip(let dy):
-            send?("strip(\(dy), \(roofIndex))")
+        case .handle(let dy):
+            send?("handle(\(dy))")
         case .roofStep(let delta):
             let i = min(CarPlayModel.roofSteps.count - 1, max(0, roofIndex + delta))
             let next = CarPlayModel.roofSteps[i]
@@ -228,8 +234,8 @@ final class JeepGestures {
                 roof = next
                 setRoof(next)
             }
-        case .stripRelease:
-            send?("stripRelease()")
+        case .handleRelease:
+            send?("handleRelease()")
         }
     }
 

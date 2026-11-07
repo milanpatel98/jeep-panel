@@ -2,17 +2,18 @@
 // mirror floor that fades out to nothing; the page itself is transparent. It opens with Milan's
 // Jeep loading screen, then from above makes one slow turn to the three-quarter view.
 // Over the canvas: Tesla-style call-outs (a lock above the roof, "Door / Open" hairlines, the
-// charge port), the roof strip (a dotted track with the Jeep's top view as the thumb) and, in
-// the tires view, the four pressures. The page takes no touches: the app drives it with
-// window.jeepEmbed — apply(state), spin(deg) / release(), strip(dy, step) / stripRelease(),
-// zoom(scale) / zoomEnd(), layout(region) / layoutRelease().
+// charge port), the roof strip on the left (a dotted track with a spring handle: the Jeep's top
+// view, which follows the finger and springs back to the middle) and, in the tires view, the
+// four pressures. The page takes no touches: the app drives it with window.jeepEmbed —
+// apply(state), spin(deg) / release(), handle(dy) / handleRelease(), zoom(scale) / zoomEnd(),
+// layout(region) / layoutRelease().
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 import { createJeep } from './jeep.js'
 import { jeepLoader } from './loader.js'
 import {
   embedCalls, overlayCalls, shortestTurn, fitBox, boxCorners,
-  stripIndex, stripThumbY, STRIP_PITCH, STRIP_STEPS, carBox, SLIDE, SLIDE_MS, calloutLayout,
+  stripIndex, handleOffset, TRACK_HALF, STRIP_STEPS, carBox, SLIDE, SLIDE_MS, calloutLayout,
 } from './embedState.js'
 
 const canvas = document.getElementById('c')
@@ -186,34 +187,31 @@ function setRegion(r, ms) {
   regionRaf = requestAnimationFrame(step)
 }
 
-// ---------- the roof strip: the thumb follows the finger, then snaps to its step ----------
-let stripResidual = 0, stripStep = null   // while a drag is on: the finger's pull and the step the app is at
+// ---------- the roof strip: a spring handle on the left, in the middle of a dotted track ----------
+// The handle follows the finger (up takes parts off, down puts them back: the app counts the
+// steps and sets the roof); letting go springs it back to the middle. Only the Jeep keeps the change.
+let handleDy = 0   // the finger's pull while a drag is on
 function stripGeometry() {
   if (!region) return null
-  const h = region.y1 - region.y0
-  const span = (STRIP_STEPS.length - 1) * STRIP_PITCH
-  const top = region.y0 + (h - span) / 2
-  return { x: region.x1 - 24, top, span }
+  return { x: region.x0 + 24, mid: (region.y0 + region.y1) / 2 }
 }
 function placeStrip() {
   const g = stripGeometry()
   const show = !!g && mode !== 'tires' && !!jeep
   stripEl.classList.toggle('hide', !show)
   if (!g) return
-  const index = stripStep ?? stripIndex(shown.roof, shown.doorsOff)
   stripEl.style.left = `${g.x - 24}px`
-  stripEl.style.top = `${g.top - 70}px`
-  stripEl.style.height = `${g.span + 140}px`
-  const dots = stripEl.querySelector('.dots')
-  dots.style.top = '34px'; dots.style.height = `${g.span + 72}px`
-  stripEl.querySelector('.arr.up').style.top = '14px'
-  stripEl.querySelector('.arr.dn').style.top = `${g.span + 140 - 24}px`
+  stripEl.style.top = `${g.mid - TRACK_HALF - 10}px`
+  stripEl.style.height = `${2 * TRACK_HALF + 20}px`
   const thumb = stripEl.querySelector('.thumb')
-  thumb.style.top = `${stripThumbY(index, stripResidual, { top: 70, pitch: STRIP_PITCH })}px`
-  const icon = { on: 'roof-on', panels: 'roof-panels', off: 'roof-off', doorsOff: 'roof-doors' }[STRIP_STEPS[index]]
-  const img = thumb.querySelector('img')
-  const src = new URL(`strip/${icon}.png`, document.baseURI).href
-  if (img.getAttribute('src') !== src) img.setAttribute('src', src)
+  thumb.style.top = `${TRACK_HALF + 10 + handleOffset(handleDy)}px`
+  const icon = { on: 'roof-on', panels: 'roof-panels', off: 'roof-off', doorsOff: 'roof-doors' }[STRIP_STEPS[stripIndex(shown.roof, shown.doorsOff)]]
+  const img = thumb.querySelector('.icon')
+  if (img.dataset.icon !== icon) {
+    img.dataset.icon = icon
+    const src = `url("${new URL(`strip/${icon}.png`, document.baseURI).href}")`
+    img.style.webkitMaskImage = src; img.style.maskImage = src
+  }
 }
 
 // ---------- call-outs and tire labels, pinned to the 3D anchors ----------
@@ -319,6 +317,7 @@ window.jeepEmbed = {
     if (typeof state.reducedMotion === 'boolean') {
       reducedMotion = state.reducedMotion || reducedMotion
       loader.still(reducedMotion)
+      stripEl.classList.toggle('still', reducedMotion)
       if (state.reducedMotion) toHero()   // Reduce Motion: no turn, straight to the 3/4 view
     }
     sync()
@@ -335,18 +334,17 @@ window.jeepEmbed = {
     stopGlide()
     idle = setTimeout(() => { if (mode === 'turntable') turntable(true); else glideHome() }, 2500)
   },
-  /** A vertical drag: the thumb follows the finger's pull `dy` (px, down positive) from `step`. */
-  strip(dy, step) {
+  /** A vertical drag: the handle follows the finger's pull `dy` (px, down positive) from the middle. */
+  handle(dy) {
     if (!Number.isFinite(dy)) return
     stripEl.dataset.drag = '1'
-    stripResidual = dy
-    stripStep = Number.isInteger(step) ? Math.max(0, Math.min(STRIP_STEPS.length - 1, step)) : null
+    handleDy = dy
     placeStrip()
   },
-  /** The vertical drag ended: the thumb snaps to the roof's step. */
-  stripRelease() {
+  /** The vertical drag ended: the handle springs back to the middle. */
+  handleRelease() {
     delete stripEl.dataset.drag
-    stripResidual = 0; stripStep = null
+    handleDy = 0
     placeStrip()
   },
   /** Two fingers: scale the view (1 … 1.8), relative to where the pinch began. */

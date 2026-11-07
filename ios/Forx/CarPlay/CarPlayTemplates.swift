@@ -75,10 +75,11 @@ enum CarPlayDebug {
 }
 
 /// The CarPlay templates: one map template whose buttons are updated in place, plus the More
-/// list, the Apps grid and Settings, pushed on tap. Map buttons: Jeep (views), Lock, Earth (the
-/// map) and Apps (the tray: the map buttons become the four favourite apps until one opens, a
-/// command runs, or 8 s pass). Bar buttons (they hide when the screen isn't touched): Roof
-/// (steps the roof, for cars and the simulator that send no drags) and More.
+/// list, the Apps grid and Settings, pushed on tap. Map buttons (plain glyphs, no tiles): Jeep
+/// (views), Lock, Earth (the map) and Apps (the tray: the map buttons become the four favourite
+/// apps until one opens, a command runs, or 8 s pass). Bar buttons (they hide when the screen
+/// isn't touched): Roof (steps the roof one part per tap, for cars and the simulator that send
+/// no drags) and More.
 /// Fingers: CarPlay's pan callbacks (and, on iOS 26 cars, zoom and rotation) reach the 3D Jeep
 /// through `gestures`; the map never pans.
 @MainActor
@@ -463,17 +464,15 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
     // MARK: Buttons
 
     static let gridIcon: CGFloat = 54
+    /// A map button's canvas (its tap target).
     static let tileSide: CGFloat = 44
     static let ink = UIColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
+    static let amber = UIColor(red: 1, green: 0x9F / 255, blue: 0x0A / 255, alpha: 1)
 
     private func mapButton(_ b: CarPlayButton, dark: Bool) -> CPMapButton {
         let kind = b.kind
         let button = CPMapButton { [weak self] _ in self?.tap(kind) }
-        if kind == .jeep {
-            button.image = Self.jeepTile(state: b.state, dark: dark)
-        } else {
-            button.image = Self.tile(symbol: b.symbol, state: b.state, dark: dark)
-        }
+        button.image = Self.glyph(b.symbol, state: b.state, dark: dark)
         return button
     }
 
@@ -492,31 +491,34 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }
     }
 
-    /// A 44 pt round tile, drawn at 3x; the glyph is the SF Symbol at 20 pt semibold.
-    /// Night off: white on #2C2C2E with a 1 pt white 8% inner edge. Day off: #1C1C1E on white
-    /// with a black 8% edge and a soft shadow. On (both): white on #0A84FF. Pending: the off
-    /// tile with the glyph at 45%. Static: map button images don't animate.
-    static func tile(symbol: String, state: CarPlayButtonState, dark: Bool = true) -> UIImage {
-        let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
-        let colour = glyphColour(state: state, dark: dark)
-        let symbolImage = UIImage(systemName: symbol, withConfiguration: config)?
-            .withTintColor(colour, renderingMode: .alwaysOriginal)
-        return tile(glyph: symbolImage, state: state, dark: dark)
-    }
+    /// The glyph's box: the assets are drawn in a 28 pt square (ios/tools/glyphs).
+    static let glyphBox: CGFloat = 28
+    /// The ring that marks a view or the map as on.
+    static let ringDiameter: CGFloat = 38
 
-    /// The Jeep button: Milan's front-view Jeep, 22 pt wide, on the tile (blue while a view other
-    /// than the hero is up).
-    static func jeepTile(state: CarPlayButtonState, dark: Bool = true) -> UIImage {
-        tile(glyph: asset("jeep-front", colour: glyphColour(state: state, dark: dark), width: 22), state: state, dark: dark)
-    }
-
-    private static func glyphColour(state: CarPlayButtonState, dark: Bool) -> UIColor {
-        let off = dark ? UIColor.white : ink
-        switch state {
-        case .off: return off
-        case .on: return .white
-        case .pending: return off.withAlphaComponent(0.45)
-        }
+    /// A map button's image: the glyph alone on a clear 44 pt canvas, at 3x (CarPlay draws no
+    /// tile of its own). Night: white; day: #1C1C1E. On: a hairline ring around it, or, for the
+    /// unlocked lock, the open-lock glyph in amber (the open state's colour, like the call-outs).
+    /// Pending: the glyph at 45%. Static: map button images don't animate.
+    static func glyph(_ asset: String, state: CarPlayButtonState, dark: Bool = true) -> UIImage {
+        let ink: UIColor = dark ? .white : self.ink
+        let open = asset == "glyph-lock-open"
+        let colour = state == .pending ? ink.withAlphaComponent(0.45) : open ? amber : ink
+        let image = self.asset(asset, colour: colour, height: glyphBox)
+        let side = tileSide
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            if state == .on && !open {
+                let ring = UIBezierPath(ovalIn: CGRect(
+                    x: (side - ringDiameter) / 2, y: (side - ringDiameter) / 2, width: ringDiameter, height: ringDiameter))
+                ring.lineWidth = 1.25
+                ink.withAlphaComponent(0.45).setStroke()
+                ring.stroke()
+            }
+            let s = image.size
+            image.draw(in: CGRect(x: (side - s.width) / 2, y: (side - s.height) / 2, width: s.width, height: s.height))
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     /// The roof icon's asset ("roof-on", "roof-panels", "roof-off", "roof-doors"): Milan's Jeep's
@@ -552,54 +554,4 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         }.withRenderingMode(.alwaysOriginal)
     }
 
-    /// The round tile behind a glyph (see `tile(symbol:state:dark:)`).
-    private static func tile(glyph symbolImage: UIImage?, state: CarPlayButtonState, dark: Bool) -> UIImage {
-        let side = tileSide
-        // day: a little room around the circle for its shadow
-        let pad: CGFloat = dark ? 0 : 2
-        let canvas = side + 2 * pad
-        let offTile = dark ? UIColor(red: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255, alpha: 1) : UIColor.white
-        let edge = dark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08)
-
-        let background: UIColor
-        var stroke: UIColor? = edge
-        var shadow = !dark
-        switch state {
-        case .off, .pending:
-            background = offTile
-        case .on:
-            background = UIColor(red: 0x0A / 255, green: 0x84 / 255, blue: 1, alpha: 1)
-            stroke = nil
-            shadow = false
-        }
-
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 3
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: canvas, height: canvas), format: format)
-        let image = renderer.image { context in
-            let circle = CGRect(x: pad, y: pad, width: side, height: side)
-            let cg = context.cgContext
-            if shadow {
-                cg.saveGState()
-                cg.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: UIColor.black.withAlphaComponent(0.12).cgColor)
-                background.setFill()
-                UIBezierPath(ovalIn: circle).fill()
-                cg.restoreGState()
-            }
-            background.setFill()
-            UIBezierPath(ovalIn: circle).fill()
-            if let stroke {
-                stroke.setStroke()
-                let ring = UIBezierPath(ovalIn: circle.insetBy(dx: 0.5, dy: 0.5))
-                ring.lineWidth = 1
-                ring.stroke()
-            }
-            if let symbolImage {
-                let s = symbolImage.size
-                symbolImage.draw(in: CGRect(
-                    x: pad + (side - s.width) / 2, y: pad + (side - s.height) / 2, width: s.width, height: s.height))
-            }
-        }
-        return image.withRenderingMode(.alwaysOriginal)
-    }
 }

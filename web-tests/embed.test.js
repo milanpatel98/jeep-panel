@@ -99,7 +99,7 @@ test('boxCornersAreTheEight', () => {
 })
 
 // ---------- v2 ----------
-import { STRIP_STEPS, stripIndex, stripThumbY, nextMode, overlayCalls, carBox, cubicBezier, calloutLayout } from '../src/embedState.js'
+import { STRIP_STEPS, STRIP_PITCH, HANDLE_TRAVEL, TRACK_HALF, stripIndex, handleOffset, nextMode, overlayCalls, carBox, cubicBezier, calloutLayout } from '../src/embedState.js'
 
 test('stripIndexBottomIsTopOnTopIsDoorsOff', () => {
   assert.deepEqual(STRIP_STEPS, ['on', 'panels', 'off', 'doorsOff'])
@@ -110,13 +110,16 @@ test('stripIndexBottomIsTopOnTopIsDoorsOff', () => {
   assert.equal(stripIndex('bogus', false), 0)
 })
 
-test('stripThumbFollowsTheFingerBetweenTheEnds', () => {
-  const t = { top: 100, pitch: 44 }
-  assert.equal(stripThumbY(0, 0, t), 232)      // Top on: the bottom step
-  assert.equal(stripThumbY(3, 0, t), 100)      // Doors off: the top step
-  assert.equal(stripThumbY(1, -10, t), 178)    // pulled up a little from Panels
-  assert.equal(stripThumbY(3, -30, t), 100)    // never past the top
-  assert.equal(stripThumbY(0, 90, t), 232)     // never past the bottom
+test('handleFollowsTheFingerFromTheMiddleNeverPastItsTravel', () => {
+  assert.equal(handleOffset(0), 0)              // home: the middle of the track
+  assert.equal(handleOffset(-30), -30)          // pulled up a little
+  assert.equal(handleOffset(30), 30)
+  assert.equal(handleOffset(-500), -HANDLE_TRAVEL)  // never past the ends
+  assert.equal(handleOffset(500), HANDLE_TRAVEL)
+  assert.equal(handleOffset(NaN), 0)
+  assert.equal(handleOffset(-20, { travel: 10 }), -10)
+  assert.equal(HANDLE_TRAVEL, 2 * STRIP_PITCH)  // two steps of travel each way
+  assert.ok(TRACK_HALF > HANDLE_TRAVEL)         // the dots run past the handle's reach
 })
 
 test('modesCycle', () => {
@@ -142,11 +145,11 @@ test('overlayCallsOnlyDiffs', () => {
   assert.deepEqual(overlayCalls({}, { roof: 'off', lights: true }), [])
 })
 
-test('carBoxLeavesTheStripColumn', () => {
+test('carBoxLeavesTheStripColumnOnTheLeft', () => {
   const region = { x0: 0, y0: 36, x1: 840, y1: 356 }
-  assert.deepEqual(carBox(region), { x0: 0, y0: 36, x1: 792, y1: 356 })
+  assert.deepEqual(carBox(region), { x0: 48, y0: 36, x1: 840, y1: 356 })
   assert.deepEqual(carBox(region, { strip: false }), region)
-  assert.equal(carBox({ x0: 10, y0: 0, x1: 20, y1: 10 }).x1, 11)
+  assert.equal(carBox({ x0: 10, y0: 0, x1: 20, y1: 10 }).x0, 19)
 })
 
 test('cubicBezierIsAnEasing', () => {
