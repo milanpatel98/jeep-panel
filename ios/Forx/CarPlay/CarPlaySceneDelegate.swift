@@ -146,7 +146,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     /// The dashboard for the store's state now; also updates the CarPlay buttons in place.
-    private static func dashboard(
+    static func dashboard(
         templates: CarPlayTemplates? = nil, dark: Bool = true, gestures: JeepGestures? = nil,
         motion: DashboardMotion? = nil, now: Date = Date()
     ) -> DashboardView {

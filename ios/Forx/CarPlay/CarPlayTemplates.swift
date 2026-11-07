@@ -55,6 +55,8 @@ enum CarPlayDebug {
     static var demoRoof: String? {
         demoWords.first { $0.hasPrefix("roof=") }.map { String($0.dropFirst(5)) }
     }
+    /// `phone`: the phone app shows the CarPlay screen itself (`CarPlayPreview`), for screenshots.
+    static var demoPhone: Bool { demoWords.contains("phone") }
 
     /// The demo Jeep (`FORX_CP=demo…`, Debug only): nil otherwise.
     static func demoSnapshot(now: Date = Date()) -> JeepSnapshot? {

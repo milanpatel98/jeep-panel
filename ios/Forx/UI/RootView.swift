@@ -22,6 +22,18 @@ struct RootView: View {
     }
 
     var body: some View {
+        #if DEBUG
+        if CarPlayDebug.demoPhone {
+            CarPlayPreview()
+        } else {
+            panel
+        }
+        #else
+        panel
+        #endif
+    }
+
+    private var panel: some View {
         PanelWebView(store: store, onSettings: { settingsOpen = true })
             .ignoresSafeArea()
             .background(Color.black.ignoresSafeArea())
