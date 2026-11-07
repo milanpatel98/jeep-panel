@@ -66,12 +66,18 @@ struct ForxApp: App {
             let app = UIApplication.shared
             let roles = app.openSessions.map(\.role.rawValue)
             sceneLog.notice("open sessions: \(roles.joined(separator: ", "))")
-            guard let car = app.openSessions.first(where: { $0.role == .carTemplateApplication }) else {
-                sceneLog.notice("no CarPlay session to reopen")
-                return
+            let request: UISceneSessionActivationRequest
+            if let car = app.openSessions.first(where: { $0.role == .carTemplateApplication }) {
+                request = UISceneSessionActivationRequest(session: car)
+            } else {
+                request = UISceneSessionActivationRequest(role: .carTemplateApplication)
             }
-            app.requestSceneSessionActivation(car, userActivity: nil, options: nil) { error in
+            app.activateSceneSession(for: request) { error in
                 sceneLog.error("CarPlay scene activation failed: \(error.localizedDescription)")
+                let byRole = UISceneSessionActivationRequest(role: .carTemplateApplication)
+                app.activateSceneSession(for: byRole) { error in
+                    sceneLog.error("CarPlay scene activation by role failed: \(error.localizedDescription)")
+                }
             }
         }
         #endif
