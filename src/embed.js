@@ -243,8 +243,17 @@ function placeOverlay() {
   if (!jeep) return
   linesSvg.replaceChildren()
   const anchor = (n) => jeep.anchor(n)
-  const centreX = region ? (carBox(region, { strip: mode !== 'tires' }).x0 + carBox(region, { strip: mode !== 'tires' }).x1) / 2 : canvas.clientWidth / 2
+  const box = carBox(region || fullRegion(), { strip: mode !== 'tires' })
+  const centreX = (box.x0 + box.x1) / 2
   const callouts = mode === 'hero' && settled && performance.now() >= heroAt
+  // a label goes on the outer side of its line, unless it would leave the car's box (onto the
+  // strip, or under the map): then it goes on the other side
+  const side = (x, left, d) => {
+    const w = d.offsetWidth || 60
+    if (left && x - 6 - w < box.x0) return false
+    if (!left && x + 6 + w > box.x1) return true
+    return left
+  }
 
   // the lock, above the roof
   const lockEl = el('lock', 'co lock', LOCK_SVG(false))
@@ -266,7 +275,7 @@ function placeOverlay() {
     const d = el(k, 'co part', `<small>${name}</small><b>Open</b>`)
     const a = open && callouts ? anchor(k) : null
     if (!a || !a.visible) { d.classList.add('hide'); continue }
-    const left = a.x < centreX
+    const left = side(a.x, a.x < centreX, d)
     const rise = roof?.visible ? Math.max(44, a.y - (roof.y - 18)) : 44
     labels.push({ d, a, left, rise })
   }
@@ -288,7 +297,7 @@ function placeOverlay() {
   if (port?.visible) {
     // a hairline up from the port (it clears the hood on the far side too), the bolt and the
     // words beside its top, on the outer side
-    const left = port.x < centreX
+    const left = side(port.x, port.x < centreX, ch)
     const c = calloutLayout(port, { left, rise: 40 })
     line(c.line)
     const [head, ...rest] = String(charge).split(' · ')
