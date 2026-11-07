@@ -147,7 +147,7 @@ test('overlayCallsOnlyDiffs', () => {
 
 test('carBoxLeavesTheStripColumnOnTheLeft', () => {
   const region = { x0: 0, y0: 36, x1: 840, y1: 356 }
-  assert.deepEqual(carBox(region), { x0: 48, y0: 36, x1: 840, y1: 356 })
+  assert.deepEqual(carBox(region), { x0: 58, y0: 36, x1: 840, y1: 356 })
   assert.deepEqual(carBox(region, { strip: false }), region)
   assert.equal(carBox({ x0: 10, y0: 0, x1: 20, y1: 10 }).x0, 19)
 })

@@ -13,7 +13,7 @@ import { createJeep } from './jeep.js'
 import { jeepLoader } from './loader.js'
 import {
   embedCalls, overlayCalls, shortestTurn, fitBox, boxCorners,
-  stripIndex, handleOffset, TRACK_HALF, STRIP_STEPS, carBox, SLIDE, SLIDE_MS, calloutLayout,
+  stripIndex, handleOffset, TRACK_HALF, STRIP_INSET, STRIP_STEPS, carBox, SLIDE, SLIDE_MS, calloutLayout,
 } from './embedState.js'
 
 const canvas = document.getElementById('c')
@@ -193,7 +193,7 @@ function setRegion(r, ms) {
 let handleDy = 0   // the finger's pull while a drag is on
 function stripGeometry() {
   if (!region) return null
-  return { x: region.x0 + 24, mid: (region.y0 + region.y1) / 2 }
+  return { x: region.x0 + STRIP_INSET + 24, mid: (region.y0 + region.y1) / 2 }
 }
 function placeStrip() {
   const g = stripGeometry()

@@ -87,6 +87,9 @@ export const STRIP_PITCH = 44
 // the dotted track runs a little past that, so the handle never reaches its end.
 export const HANDLE_TRAVEL = 2 * STRIP_PITCH
 export const TRACK_HALF = HANDLE_TRAVEL + 22
+// The strip's column: this far in from the region's left edge (room from CarPlay's dock), 48 wide.
+export const STRIP_INSET = 10
+export const STRIP_WIDTH = 48
 
 // Which step the Jeep is on (0 = Top on … 3 = Doors off): the handle shows that step's icon.
 export function stripIndex(roof, doorsOff) {
@@ -124,7 +127,7 @@ export function overlayCalls(prev = {}, next = {}) {
 }
 
 // The box the car is fitted into: the region less the strip's column on its left (when the strip shows).
-export function carBox(region, { strip = true, stripWidth = 48 } = {}) {
+export function carBox(region, { strip = true, stripWidth = STRIP_INSET + STRIP_WIDTH } = {}) {
   const x0 = strip ? Math.min(region.x1 - 1, region.x0 + stripWidth) : region.x0
   return { x0, y0: region.y0, x1: region.x1, y1: region.y1 }
 }
