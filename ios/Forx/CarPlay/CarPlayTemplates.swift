@@ -57,6 +57,22 @@ enum CarPlayDebug {
     }
     /// `phone`: the phone app shows the CarPlay screen itself (`CarPlayPreview`), for screenshots.
     static var demoPhone: Bool { demoWords.contains("phone") }
+    /// `drag=-50`: a finger pulls the roof strip's handle this far (pt, down positive) a few
+    /// seconds after launch and holds it there, for a screenshot of the handle mid-drag.
+    static var demoDrag: Double? {
+        demoWords.first { $0.hasPrefix("drag=") }.flatMap { Double($0.dropFirst(5)) }
+    }
+
+    /// Runs the `drag=` demo on `gestures` once the page has had time to come up.
+    static func runDemoDrag(_ gestures: JeepGestures?) {
+        guard let dy = demoDrag, let gestures else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(7))
+            gestures.began()
+            gestures.changed(CGPoint(x: 0, y: dy < 0 ? -12 : 12))
+            gestures.changed(CGPoint(x: 0, y: dy))
+        }
+    }
 
     /// The demo Jeep (`FORX_CP=demo…`, Debug only): nil otherwise.
     static func demoSnapshot(now: Date = Date()) -> JeepSnapshot? {

@@ -54,6 +54,7 @@ struct CarPlayPreview: View {
             if let roof = CarPlayDebug.demoRoof { AppModel.roof = roof }
             if let mode = CarPlayDebug.demoMode { motion.mode = mode }
             if CarPlayDebug.demoMap { motion.mapOpen = true }
+            CarPlayDebug.runDemoDrag(gestures)
             // CarPlay is wide: turn the phone
             let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
             scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { _ in }
