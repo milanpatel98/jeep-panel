@@ -111,6 +111,14 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         paint(dark)
         host?.rootView = view
+        flush()
+    }
+
+    /// CarPlay's window doesn't redraw SwiftUI by itself after a root-view change (the map stayed
+    /// shut when Earth opened it): lay it out now.
+    private func flush() {
+        host?.view.setNeedsLayout()
+        host?.view.layoutIfNeeded()
     }
 
     /// A rebuild outside observation (ticker, Reduce Motion, appearance); the observation stays armed.
@@ -122,6 +130,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         paint(dark)
         host?.rootView = Self.dashboard(templates: templates, dark: dark, gestures: gestures, motion: motion)
+        flush()
     }
 
     private func paint(_ dark: Bool) {
