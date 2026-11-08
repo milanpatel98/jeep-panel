@@ -284,9 +284,9 @@ struct DashboardView: View {
         }
         .frame(width: frame.width, height: frame.height, alignment: .leading)
         .offset(x: frame.minX)
-        .animation(dividerDx == 0 ? DashboardLayout.slide : nil, value: mapOpen)
-        // a finger moves it as is; letting go glides it back (the page glides the car the same way)
-        .animation(dividerDx == 0 ? DashboardLayout.slide : nil, value: dividerDx)
+        // No SwiftUI animation here: CarPlay's window doesn't run SwiftUI's frame-by-frame
+        // animations, so an animated map stayed off screen. The map appears at once; the 3D page
+        // slides the Jeep over itself.
         .accessibilityHidden(true)
         .allowsHitTesting(false)
     }
