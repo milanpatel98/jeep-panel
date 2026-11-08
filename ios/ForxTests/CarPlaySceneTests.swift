@@ -67,7 +67,7 @@ struct CarPlaySceneTests {
         #expect(t.shownButtons.map(\.kind) == [.jeep, .lock, .earth, .apps])
         #expect(t.mapTemplate.leadingNavigationBarButtons.isEmpty)  // nothing over the status row
         #expect(t.mapTemplate.trailingNavigationBarButtons.count == 2)  // Roof, More; Settings is in More
-        #expect(t.mapTemplate.automaticallyHidesNavigationBar)
+        #expect(!t.mapTemplate.automaticallyHidesNavigationBar)
         #expect(!t.mapTemplate.hidesButtonsWithNavigationBar)  // taps on the Jeep can't bring them back
 
         // The same model again reassigns nothing (no flicker).

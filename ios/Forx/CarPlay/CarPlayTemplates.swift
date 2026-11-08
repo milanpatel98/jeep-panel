@@ -169,10 +169,9 @@ final class CarPlayTemplates: NSObject, CPMapTemplateDelegate {
         // The host's view controller (share button, etc.) talks to the delegate; without one
         // it crashes CarPlayTemplateUIHost. Set before the template becomes root.
         if !CarPlayDebug.skipMapDelegate { mapTemplate.mapDelegate = self }
-        // The top bar fades when the screen isn't touched. The map buttons stay: CarPlay doesn't
-        // bring them back on a tap on the Jeep (the base view gets no touches), so hidden buttons
-        // would be gone for good.
-        mapTemplate.automaticallyHidesNavigationBar = true
+        // Nothing fades: CarPlay doesn't bring the bar or the map buttons back on a tap on the
+        // Jeep (the base view gets no touches), so hidden controls would be gone for good.
+        mapTemplate.automaticallyHidesNavigationBar = false
         mapTemplate.hidesButtonsWithNavigationBar = false
         if CarPlayDebug.listRoot {
             interface.setRoot(CPListTemplate(title: "Forx", sections: []))
