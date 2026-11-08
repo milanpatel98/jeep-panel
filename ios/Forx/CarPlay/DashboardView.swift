@@ -257,11 +257,10 @@ struct DashboardView: View {
                     .padding(.vertical, 8)
                     .background(theme.toast, in: Capsule())
                     .overlay(Capsule().strokeBorder(theme.edge, lineWidth: 1))
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .frame(width: l.region(mapOpen: mapOpen).width, height: l.toastBottom, alignment: .bottom)
-        .animation(.easeOut(duration: 0.25), value: model.message)
+        // no transition/animation: CarPlay's window doesn't run them (the pill would stay invisible)
         .allowsHitTesting(false)
     }
 
